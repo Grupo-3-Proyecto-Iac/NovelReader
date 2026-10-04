@@ -174,6 +174,119 @@ Puedes probar menos pasos de inferencia:
 Mantén MAX_TTS_CONCURRENCY=1. Aumentar la concurrencia puede generar más
 audio simultáneamente, pero también eleva el consumo de CPU y memoria.
 
+## Parámetros ajustables del procesamiento de audio
+
+Hay tres grupos de parámetros: el modelo del servidor, la solicitud de cada
+segmento y la división del texto en la aplicación Android.
+
+### Parámetros del servidor
+
+Se pueden definir como variables de entorno antes de iniciar Uvicorn o dentro
+de server/.env cuando se usa Docker:
+
+| Parámetro | Valor habitual | Para qué sirve | Efecto principal |
+| --- | ---: | --- | --- |
+| SUPERTONIC_MODEL | supertonic-3 | Selecciona el modelo Supertonic cargado. | Cambiarlo puede modificar compatibilidad, memoria y calidad. |
+| SUPERTONIC_VOICE | M5 | Voz predeterminada si el cliente no envía otra. | En esta aplicación se usa M5 deliberadamente. |
+| SUPERTONIC_STEPS | 8 | Número de pasos de inferencia por segmento. | Más pasos suelen dar mayor estabilidad/calidad, pero tardan más y consumen más CPU. |
+| MAX_TTS_CONCURRENCY | 1 | Número máximo de segmentos procesados al mismo tiempo. | Subirlo puede aumentar el rendimiento total, pero eleva mucho la carga y la memoria. |
+| MAX_PENDING_SEGMENTS | 3 | Cantidad máxima de solicitudes esperando en la cola de una conexión. | Una cola mayor permite más precarga; una menor limita memoria y evita acumular audio inútil. |
+| OMP_NUM_THREADS | 4 | Hilos de OpenMP usados por operaciones numéricas. | Afecta la carga de CPU y la velocidad. |
+| MKL_NUM_THREADS | 4 | Hilos usados por Intel MKL cuando está disponible. | Afecta la carga de CPU y la velocidad. |
+| ORT_INTRA_OP_NUM_THREADS | 4 | Hilos dentro de una operación de ONNX Runtime. | Más hilos pueden acelerar una inferencia, pero aumentan el consumo. |
+| ORT_INTER_OP_NUM_THREADS | 1 | Operaciones de ONNX Runtime ejecutadas en paralelo. | Mantenerlo en 1 evita paralelismo excesivo en un equipo limitado. |
+| LOG_LEVEL | INFO | Nivel de detalle de los logs. | DEBUG muestra más información; no mejora el audio. |
+| TTS_AUTH_TOKEN | vacío en local | Token que debe presentar el cliente para usar el WebSocket. | No cambia la calidad; protege la API cuando se expone fuera de la red local. |
+
+PORT aparece en server/.env.example para Docker o plataformas de despliegue.
+Cuando ejecutas Uvicorn localmente, el puerto real lo determina el argumento
+--port, por ejemplo --port 8765.
+
+Configuración equilibrada para tu PC:
+
+    SUPERTONIC_STEPS=8
+    MAX_TTS_CONCURRENCY=1
+    MAX_PENDING_SEGMENTS=3
+    OMP_NUM_THREADS=4
+    MKL_NUM_THREADS=4
+    ORT_INTRA_OP_NUM_THREADS=4
+    ORT_INTER_OP_NUM_THREADS=1
+
+Configuración de menor consumo:
+
+    SUPERTONIC_STEPS=6
+    MAX_TTS_CONCURRENCY=1
+    MAX_PENDING_SEGMENTS=2
+    OMP_NUM_THREADS=2
+    MKL_NUM_THREADS=2
+    ORT_INTRA_OP_NUM_THREADS=2
+    ORT_INTER_OP_NUM_THREADS=1
+
+No conviene subir todos los valores a la vez. Primero cambia un parámetro,
+prueba un segmento y compara los logs de generation_ms, audio_ms y RTF.
+
+### Parámetros enviados por cada segmento
+
+La aplicación envía por WebSocket una solicitud con estos campos:
+
+    {
+      "type": "tts_request",
+      "sessionId": "libro-capitulo",
+      "segmentId": 12,
+      "text": "Texto en español.",
+      "voice": "M5",
+      "speed": 1.0
+    }
+
+- text: texto que se convertirá en audio. Segmentos demasiado grandes tardan
+  más en generarse y pueden aumentar la espera inicial.
+- voice: voz de Supertonic. NovelReader envía M5 y la interfaz está diseñada
+  para usar únicamente esa voz.
+- speed: velocidad de lectura. La app ofrece 0.75, 1.0, 1.25, 1.4, 1.5 y 2.0.
+  El cliente limita los valores enviados al intervalo 0.5–2.0. Una velocidad de 1.4 reduce la
+  duración del audio, pero puede sonar menos natural que 1.0 o 1.25.
+- segmentId y sessionId: identificadores de orden y reproducción; no cambian
+  la calidad ni la velocidad de inferencia.
+
+### División del texto en Android
+
+La aplicación no procesa un capítulo entero de una sola vez. SpeechChunker
+divide cada párrafo respetando frases y límites de párrafo para evitar cortes,
+repeticiones y solicitudes demasiado pesadas. Actualmente usa estas constantes
+en app/src/main/java/com/novelreader/reader/SpeechChunker.kt:
+
+| Constante | Valor | Función |
+| --- | ---: | --- |
+| MIN_CHARS | 40 | Intenta unir unidades muy pequeñas con la anterior. |
+| TARGET_CHARS | 180 | Tamaño objetivo al agrupar frases largas. |
+| MAX_CHARS | 300 | Límite aproximado de cada unidad enviada al servidor. |
+
+No se recomienda modificar estos valores mientras se busca resolver pausas o
+palabras cortadas. Si se aumenta MAX_CHARS, habrá menos solicitudes, pero cada
+solicitud tardará más y será más difícil recuperar un segmento fallido. Si se
+reduce demasiado, aumentarán las pausas y el número de solicitudes.
+
+La precarga del cliente está configurada en 2 segmentos en
+RemoteTtsPlaybackManager.kt. Esto permite generar el siguiente audio mientras
+se reproduce el actual. Reducirla a 1 disminuye memoria y carga pendiente;
+aumentarla puede reducir pausas en una red lenta, pero también puede adelantar
+mucho el procesamiento y dificultar la sincronización visual.
+
+### Qué parámetro cambiar según el problema
+
+| Problema | Primer ajuste recomendado |
+| --- | --- |
+| CPU demasiado alta | Mantener MAX_TTS_CONCURRENCY=1 y bajar los hilos a 2; después probar STEPS=6. |
+| La lectura se queda sin audio | Mantener STEPS=8 y MAX_PENDING_SEGMENTS=3; revisar el RTF y la red. |
+| Mucha memoria o demasiada cola | Bajar MAX_PENDING_SEGMENTS a 2 y no aumentar la concurrencia. |
+| Voz demasiado lenta | Cambiar speed a 1.25 o 1.4 desde la app; no confundirlo con STEPS. |
+| Voz inestable o palabras cortadas | Mantener STEPS=8, speed entre 1.0 y 1.25 y no reducir demasiado MAX_CHARS. |
+| Muchas pausas entre unidades | No aumentar la concurrencia automáticamente; revisar RTF, red y precarga. |
+
+STEPS controla el trabajo de generación; speed controla la velocidad de habla.
+Son parámetros diferentes: subir speed no necesariamente reduce el tiempo que
+el servidor tarda en generar el audio.
+
 ## 5. Probar con el emulador
 
 1. Inicia la API local en el PC en el puerto 8765.
