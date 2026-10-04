@@ -1,0 +1,4 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/black" />
+    <foreground><inset android:inset="16%"><bitmap android:src="@drawable/novelreader_logo" android:gravity="fill" /></inset></foreground>
+</adaptive-icon>

@@ -1,0 +1,52 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/reader_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFDF9">
+
+    <FrameLayout
+        android:id="@+id/reader_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/reader_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_gravity="top"
+        android:visibility="visible"
+        android:background="#F8F3E9"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="8dp">
+        <Button android:id="@+id/reader_back" android:layout_width="56dp" android:layout_height="56dp" android:minWidth="56dp" android:text="←" android:contentDescription="Volver a la biblioteca" android:textSize="22sp" android:backgroundTint="@android:color/transparent" />
+        <TextView android:id="@+id/reader_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:text="NovelReader" android:textColor="#2B2620" android:textSize="16sp" android:textStyle="bold" />
+        <Button android:id="@+id/toc_button" android:layout_width="56dp" android:layout_height="56dp" android:minWidth="56dp" android:text="☰" android:contentDescription="Abrir índice" android:textSize="22sp" android:backgroundTint="@android:color/transparent" />
+        <Button android:id="@+id/bookmark_button" android:layout_width="56dp" android:layout_height="56dp" android:minWidth="56dp" android:text="♦" android:contentDescription="Guardar marcador" android:textSize="20sp" android:backgroundTint="@android:color/transparent" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/reader_bottom_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#F8F3E9"
+        android:elevation="4dp"
+        android:visibility="gone"
+        android:orientation="vertical"
+        android:padding="10dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+            <TextView android:id="@+id/reader_progress_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0%" android:textColor="#7A7166" android:textSize="12sp" />
+            <ProgressBar style="?android:attr/progressBarStyleHorizontal" android:id="@+id/reader_progress" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:contentDescription="Progreso de lectura" android:progressTint="#B98B33" android:max="100" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:orientation="horizontal">
+            <Button android:id="@+id/reader_settings" android:layout_width="64dp" android:layout_height="48dp" android:text="Aa" android:contentDescription="Abrir ajustes de lectura" android:textColor="#2B2620" android:backgroundTint="@android:color/transparent" />
+            <Space android:layout_width="12dp" android:layout_height="1dp" />
+            <Button android:id="@+id/reader_audio" android:layout_width="64dp" android:layout_height="48dp" android:text="▶" android:contentDescription="Abrir lectura en voz alta" android:textColor="#2B2620" android:backgroundTint="@android:color/transparent" />
+            <Space android:layout_width="12dp" android:layout_height="1dp" />
+            <Button android:id="@+id/reader_bookmarks" android:layout_width="64dp" android:layout_height="48dp" android:text="🔖" android:contentDescription="Ver marcadores" android:textColor="#2B2620" android:backgroundTint="@android:color/transparent" />
+            <Space android:layout_width="12dp" android:layout_height="1dp" />
+            <TextView android:id="@+id/reader_status" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Lectura guardada" android:textColor="#7A7166" android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

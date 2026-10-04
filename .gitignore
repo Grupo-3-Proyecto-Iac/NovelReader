@@ -1,0 +1,28 @@
+.gradle/
+.gradle-local/
+build/
+*/build/
+local.properties
+.idea/
+*.iml
+captures/
+
+# Entorno local y cachés de desarrollo
+.adb-home/
+.android-local/
+.android-sdk-home/
+.kotlin/
+.tmp-aar-inspect2/
+server/.venv/
+server/__pycache__/
+__pycache__/
+*.pyc
+
+# Artefactos generados y logs
+*.apk
+*.log
+*.log.txt
+classes.jar
+
+# Secretos locales
+server/.env

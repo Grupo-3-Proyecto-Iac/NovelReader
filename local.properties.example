@@ -1,0 +1,3 @@
+# Copia estas propiedades a local.properties. No subas local.properties.
+remoteTtsUrl=ws://192.168.0.40:8765/ws/tts
+remoteTtsUrl=ws://10.0.2.2:8765/ws/tts
