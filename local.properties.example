@@ -1,3 +1,11 @@
 # Copia estas propiedades a local.properties. No subas local.properties.
-remoteTtsUrl=ws://192.168.0.40:8765/ws/tts
+# Android Studio añadirá aquí sdk.dir automáticamente.
+
+# Emulador Android Studio + API ejecutándose en este PC:
 remoteTtsUrl=ws://10.0.2.2:8765/ws/tts
+
+# Teléfono físico en la misma Wi-Fi: comenta la línea anterior y usa la IPv4
+# del PC, por ejemplo:
+# remoteTtsUrl=ws://192.168.0.40:8765/ws/tts
+
+remoteTtsToken=
