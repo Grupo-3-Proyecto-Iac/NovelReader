@@ -27,11 +27,13 @@ class SleepTimerService : Service() {
         const val ACTION_TICK = "com.novelreader.action.SLEEP_TIMER_TICK"
         const val ACTION_FINISHED = "com.novelreader.action.SLEEP_TIMER_FINISHED"
         const val ACTION_CANCEL = "com.novelreader.action.SLEEP_TIMER_CANCEL"
+        const val ACTION_ADD_15 = "com.novelreader.action.SLEEP_TIMER_ADD_15"
         const val ACTION_CANCELLED = "com.novelreader.action.SLEEP_TIMER_CANCELLED"
         const val EXTRA_REMAINING_SECONDS = "remaining_seconds"
         private const val EXTRA_MINUTES = "minutes"
-        private const val CHANNEL_ID = "novelreader_sleep_timer"
+        private const val CHANNEL_ID = "reading_timer"
         private const val NOTIFICATION_ID = 4202
+        private const val FINISHED_NOTIFICATION_ID = 4209
 
         fun start(context: Context, minutes: Int) {
             if (minutes <= 0) {
@@ -63,6 +65,13 @@ class SleepTimerService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_ADD_15 && endAtElapsed > SystemClock.elapsedRealtime()) {
+            endAtElapsed += 15 * 60_000L
+            val remaining = ((endAtElapsed - SystemClock.elapsedRealtime()) / 1000L).coerceAtLeast(0L)
+            updateNotification(remaining)
+            sendEvent(ACTION_TICK, remaining)
+            return START_NOT_STICKY
+        }
 
         val minutes = intent?.getIntExtra(EXTRA_MINUTES, 0) ?: 0
         if (minutes <= 0) {
@@ -85,8 +94,8 @@ class SleepTimerService : Service() {
                 delay(1_000L)
             }
             sendEvent(ACTION_FINISHED, 0L)
-            updateNotification(0L)
             stopForeground(STOP_FOREGROUND_REMOVE)
+            getSystemService(NotificationManager::class.java).notify(FINISHED_NOTIFICATION_ID, finishedNotification())
             stopSelf()
         }
         return START_NOT_STICKY
@@ -114,15 +123,21 @@ class SleepTimerService : Service() {
             Intent(this, SleepTimerService::class.java).setAction(ACTION_CANCEL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val addTimeIntent = PendingIntent.getService(
+            this,
+            4205,
+            Intent(this, SleepTimerService::class.java).setAction(ACTION_ADD_15),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val active = remainingSeconds > 0L
         val text = if (active) {
-            "Tiempo restante: ${formatRemainingTime(remainingSeconds)}"
+            "El audio se detendrá en ${formatRemainingTime(remainingSeconds)}"
         } else {
             "Temporizador finalizado"
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("NovelReader · Temporizador de lectura")
+            .setContentTitle("Temporizador de lectura")
             .setContentText(text)
             .setSubText("Voz M5 · Supertonic")
             .setOngoing(active)
@@ -134,7 +149,26 @@ class SleepTimerService : Service() {
             .setUsesChronometer(active)
             .setChronometerCountDown(true)
             .setContentIntent(contentIntent)
+            .addAction(android.R.drawable.ic_input_add, "+15 min", addTimeIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancelar", cancelIntent)
+            .build()
+    }
+
+    private fun finishedNotification(): Notification {
+        val continueIntent = PendingIntent.getService(
+            this,
+            4206,
+            Intent(this, AudioPlaybackService::class.java).setAction(AudioPlaybackService.ACTION_PLAY_PAUSE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Lectura pausada")
+            .setContentText("El temporizador ha terminado")
+            .setAutoCancel(true)
+            .setTimeoutAfter(10_000L)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .addAction(android.R.drawable.ic_media_play, "Continuar", continueIntent)
             .build()
     }
 
@@ -161,7 +195,7 @@ class SleepTimerService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Temporizador de NovelReader", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, "Temporizador de lectura", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }

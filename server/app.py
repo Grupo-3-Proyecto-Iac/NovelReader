@@ -39,6 +39,7 @@ class SupertonicEngine:
         self.sample_rate = int(self.tts.sample_rate)
         self.default_voice = os.getenv("SUPERTONIC_VOICE", "M5")
         self.steps = int(os.getenv("SUPERTONIC_STEPS", "8"))
+        self.tail_silence_ms = int(os.getenv("TTS_TAIL_SILENCE_MS", "180"))
         self._styles: dict[str, Any] = {}
         logger.info("Supertonic cargado: model=%s sample_rate=%s steps=%s", model, self.sample_rate, self.steps)
 
@@ -57,8 +58,14 @@ class SupertonicEngine:
             total_steps=self.steps,
         )
         array = np.asarray(waveform).squeeze()
-        pcm = np.clip(array, -1.0, 1.0)
-        pcm = (pcm * 32767.0).astype("<i2", copy=False).tobytes()
+        pcm_array = (np.clip(array, -1.0, 1.0) * 32767.0).astype("<i2", copy=False)
+        # Supertonic puede terminar muy cerca del último fonema, especialmente
+        # a velocidades altas. Un pequeño colchón PCM evita que AudioTrack o la
+        # red corten el final sin introducir una pausa perceptible larga.
+        tail_samples = max(0, int(self.sample_rate * self.tail_silence_ms / 1000))
+        if tail_samples:
+            pcm_array = np.concatenate((pcm_array, np.zeros(tail_samples, dtype="<i2")))
+        pcm = pcm_array.tobytes()
         audio_duration = len(pcm) / (self.sample_rate * 2)
         generation_ms = (time.perf_counter() - started) * 1000.0
         return pcm, self.sample_rate, audio_duration or len(pcm) / (self.sample_rate * 2)
@@ -218,10 +225,10 @@ async def tts_socket(websocket: WebSocket) -> None:
                 speed=float(payload.get("speed", 1.0)),
                 generation=state["generation"],
             )
-            try:
-                queue.put_nowait(request)
-            except asyncio.QueueFull:
-                await _send_json(websocket, send_lock, {"type": "backpressure", "segmentId": request.segment_id})
+            # Nunca descartes un segmento por una cola llena. La espera aplica
+            # contrapresión natural al socket y garantiza una reproducción larga
+            # y continua incluso si la generación se retrasa temporalmente.
+            await queue.put(request)
     except (WebSocketDisconnect, json.JSONDecodeError, ValueError):
         logger.info("Sesión WebSocket cerrada")
     finally:

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NovelReader · Especificación de diseño</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--pg:#f4f2ec;--cd:#fff;--tx:#1d2321;--mu:#68716d;--ln:#0000001a;--ac:#1f5f4a}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--pg:#0e1211;--cd:#181e1c;--tx:#eceee9;--mu:#9aa5a0;--ln:#ffffff1a;--ac:#8fd0b0}}
+:root[data-theme="dark"]{--pg:#0e1211;--cd:#181e1c;--tx:#eceee9;--mu:#9aa5a0;--ln:#ffffff1a;--ac:#8fd0b0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--tx);font:15px/1.55 system-ui,Arial,sans-serif}
+main{max-width:1100px;margin:auto;padding:28px 18px 80px}
+h1{font:700 32px/1.1 Georgia,serif;margin:0 0 8px}h2{font:700 22px Georgia,serif;margin:44px 0 6px}h3{font-size:13px;letter-spacing:1px;color:var(--mu);margin:22px 0 10px}
+p.l{color:var(--mu);margin:0 0 16px;max-width:70ch}
+.box{background:var(--cd);border:1px solid var(--ln);border-radius:16px;padding:16px}
+.row{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.cap{font-size:12px;font-weight:700;margin:8px 0 0;text-align:center}.cap small{display:block;color:var(--mu);font-weight:400}
+code{background:var(--ln);padding:1px 6px;border-radius:5px;font-size:12.5px}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--ln);vertical-align:top}th{color:var(--mu);font-size:11px;letter-spacing:1px}
+.sw{display:inline-flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;margin:0 8px 8px 0}.sw i{width:54px;height:40px;border-radius:10px;border:1px solid #8886}
+.scroll{overflow-x:auto;padding-bottom:6px}
+/* mini phone */
+.ph{width:210px;height:410px;flex:none;border-radius:24px;border:4px solid #000;position:relative;overflow:hidden;background:#14181a;color:#f1efe8;font-size:10px;line-height:1.35;display:flex;flex-direction:column}
+.ph .pad{padding:14px 12px;flex:1;overflow:hidden}
+.ph h4{margin:0;font:700 17px Georgia,serif}.ph .mu{color:#a4aeb0;font-size:9px}
+.ph .s{height:28px;border-radius:9px;background:#1e2427;margin:8px 0;padding:7px 10px;color:#a4aeb0}
+.ph .ch{display:flex;gap:4px;margin-bottom:8px}.ph .ch b{padding:4px 8px;border-radius:12px;background:#1e2427;color:#a4aeb0;font-weight:600}.ph .ch b.on{background:#e0b36a;color:#241a08}
+.ph .hero{display:flex;gap:8px;padding:9px;border-radius:14px;background:#1e2427;margin-bottom:10px}
+.cv{border-radius:3px 7px 7px 3px;flex:none}
+.ph .bar{height:4px;border-radius:2px;background:#2a3236;margin:5px 0}.ph .bar i{display:block;height:100%;background:#e0b36a;border-radius:2px}
+.ph .btn{display:inline-block;padding:6px 12px;border-radius:9px;background:#e0b36a;color:#241a08;font-weight:700;margin-top:6px}
+.ph .nav{display:flex;justify-content:space-around;padding:8px;background:#1e2427cc;color:#a4aeb0;font-size:9px;font-weight:700}
+.ph .emp{text-align:center;padding-top:44px}.ph .emp .ic{font-size:30px;color:#e0b36a}.ph .emp h5{font:700 14px Georgia,serif;margin:8px 0 4px}
+.ph .sh{position:absolute;left:0;right:0;bottom:0;height:68%;border-radius:18px 18px 0 0;background:#1e2427ee;padding:10px 12px}
+.ph .grp{background:#14181a;border-radius:10px;padding:8px;margin-top:7px}
+.ph .tb{display:flex;gap:6px;justify-content:center;margin:8px 0}.ph .tb b{width:34px;height:34px;border-radius:17px;background:#2a3236;display:grid;place-items:center;font-size:12px}.ph .tb b.p{background:#e0b36a;color:#241a08;width:42px;height:42px;border-radius:21px}
+.ph .it{padding:8px 0;border-bottom:1px solid #ffffff14}
+.err{color:#ffb4ab}
+/* notifications */
+.nt{width:340px;max-width:100%;border-radius:20px;background:#2b2f33;color:#eee;padding:12px 14px;font-size:13px;line-height:1.35}
+.nt.light{background:#fff;color:#222;border:1px solid var(--ln)}
+.nt .hd{display:flex;gap:6px;align-items:center;font-size:11px;color:#b8bec4;margin-bottom:8px}.nt.light .hd{color:#666}
+.nt .dot{width:14px;height:14px;border-radius:4px;background:#e0b36a}
+.nt .bd{display:flex;gap:12px;align-items:center}.nt .bd .t{flex:1;min-width:0}.nt b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nt .sm{color:#b8bec4;font-size:12px}
+.nt .lg{width:56px;height:56px;border-radius:10px;flex:none}
+.nt .pr{height:4px;border-radius:2px;background:#ffffff30;margin:10px 0 2px}.nt .pr i{display:block;height:100%;background:#e0b36a;border-radius:2px}
+.nt .ac{display:flex;gap:6px;justify-content:space-around;margin-top:10px}
+.nt .ac span{padding:6px 12px;border-radius:16px;background:#ffffff1c;font-weight:700;font-size:12px}.nt.light .ac span{background:#0000000d}
+.nt .ac span.big{background:#e0b36a;color:#241a08}
+.pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--ac);color:var(--pg);margin-bottom:6px}
+.pill.no{background:#b3261e;color:#fff}
+ul{margin:6px 0 0;padding-left:20px}li{margin:4px 0}
+.nt .ac span{display:inline-flex;align-items:center;gap:5px}.ph .nav span{display:flex;align-items:center;gap:4px}.ph .tb b svg{display:block}
+</style>
+</head>
+<body>
+<main>
+<h1>NovelReader · Especificación de diseño</h1>
+<p class="l">Documento para implementar en la app Android (Kotlin / Jetpack Compose, Readium). Incluye estilos, pantallas con datos y vacías, y el contenido exacto de las notificaciones. Prototipo interactivo de referencia: <code>novelreader-redesign.html</code>.</p>
+
+<h2>1 · Tokens de diseño</h2>
+<h3>TEMAS (fondo · superficie · acento · texto)</h3>
+<div class="box" id="themes"></div>
+<h3>ICONOS (trazo 2 dp, extremos redondeados, color = currentColor)</h3>
+<div class="box" id="icons"></div>
+<h3>LECTURA</h3>
+<div class="box"><table>
+<tr><th>Propiedad</th><th>Valor por defecto</th><th>Rango</th></tr>
+<tr><td>Tamaño de letra</td><td>18 sp</td><td>13–28, botones A− / A+</td></tr>
+<tr><td>Interlineado</td><td>1.75</td><td>1.3–2.3, paso 0.05 (slider)</td></tr>
+<tr><td>Separación entre párrafos</td><td>1.1 em</td><td>0–2.5 em, paso 0.1 (slider)</td></tr>
+<tr><td>Alineación</td><td>Izquierda</td><td>Izquierda / Justificado</td></tr>
+<tr><td>Tipografías</td><td colspan="2">Times New Roman (defecto), Georgia, Palatino, Garamond, Sans, Mono</td></tr>
+<tr><td>Velocidad de audio</td><td>1.4×</td><td>0.5×–2×, paso 0.05 (slider continuo)</td></tr>
+</table></div>
+<h3>EFECTOS Y FORMAS</h3>
+<div class="box"><ul>
+<li>Blur (vidrio esmerilado) en: barra inferior, barra superior del lector, panel inferior, mini reproductor. Android 12+: <code>RenderEffect</code> / <code>Modifier.blur</code>; en versiones anteriores usar color sólido con 92 % de opacidad.</li>
+<li>Esquinas: tarjetas 18–22 dp, panel inferior 26 dp arriba, botones 12–14 dp, chips totalmente redondos.</li>
+<li>Iconos: trazo 2 dp, extremos redondeados (estilo Lucide / Material Symbols Rounded). Marcador relleno con color de acento cuando está activo.</li>
+</ul></div>
+
+<h2>2 · Pantallas: con datos y sin datos</h2>
+<p class="l">Cada pantalla debe tener su estado vacío. Nunca mostrar una pantalla en blanco.</p>
+<h3>BIBLIOTECA</h3>
+<div class="row scroll" id="lib"></div>
+<h3>PANEL DEL LECTOR · AUDIO E ÍNDICE</h3>
+<div class="row scroll" id="rd"></div>
+<h3>COMPORTAMIENTO DEL LECTOR</h3>
+<div class="box"><ul>
+<li>Tocar el <b>cuadrado invisible central</b> (≈ 56 % del ancho, centrado en la pantalla) abre el panel inferior. Tocar fuera del cuadrado no hace nada. Con el panel abierto, tocar el texto lo cierra. No debe bloquear el desplazamiento.</li>
+<li>Panel con 4 pestañas con icono arriba y texto abajo: Lectura, Audio, Índice, Marcas.</li>
+<li>Marcar párrafo: el icono de marcador se rellena; al repetir se quita (aviso breve «Párrafo marcado» / «Marca quitada»).</li>
+<li>Los ajustes de lectura se aplican en vivo mientras se mueve el slider y se guardan automáticamente.</li>
+</ul></div>
+
+<h2>3 · Notificaciones</h2>
+<p class="l">Dos notificaciones independientes. Ambas deben seguir funcionando con la pantalla bloqueada.</p>
+
+<h3>A · REPRODUCTOR (MediaStyle, servicio en primer plano)</h3>
+<div class="row" id="np"></div>
+<div class="box" style="margin-top:14px"><table>
+<tr><th>Campo</th><th>Contenido</th></tr>
+<tr><td>Canal</td><td><code>reading_audio</code> · importancia LOW (sin sonido) · persistente mientras haya audio activo</td></tr>
+<tr><td>Título</td><td>Título de la novela</td></tr>
+<tr><td>Texto</td><td>«Capítulo actual · Voz M5 · velocidad» (ej. <i>Prólogo · Voz M5 · 1.4×</i>)</td></tr>
+<tr><td>Icono grande</td><td>Portada del libro (si no hay, un fondo de color con la inicial del título)</td></tr>
+<tr><td>Acciones</td><td>Anterior párrafo · Reproducir/Pausar · Siguiente párrafo · Detener. Compactas: las 3 primeras</td></tr>
+<tr><td>Progreso</td><td>% leído de la novela en la barra (<code>MediaSession</code> con posición)</td></tr>
+<tr><td>Al tocar</td><td>Abre el lector en la posición actual</td></tr>
+<tr><td>Pantalla de bloqueo</td><td>Visible con controles (<code>VISIBILITY_PUBLIC</code>)</td></tr>
+</table></div>
+
+<h3>B · TEMPORIZADOR DE LECTURA</h3>
+<div class="row" id="nt"></div>
+<div class="box" style="margin-top:14px"><table>
+<tr><th>Campo</th><th>Contenido</th></tr>
+<tr><td>Canal</td><td><code>reading_timer</code> · importancia LOW · solo existe mientras el temporizador está activo</td></tr>
+<tr><td>Título</td><td>«Temporizador de lectura»</td></tr>
+<tr><td>Texto</td><td>«El audio se detendrá en 14:32» con cuenta regresiva (<code>setUsesChronometer(true)</code> + <code>setChronometerCountDown(true)</code>)</td></tr>
+<tr><td>Acciones</td><td>«+15 min» · «Cancelar»</td></tr>
+<tr><td>Al terminar</td><td>Pausa el audio, reemplaza por «Lectura pausada» (aviso final, con sonido suave, se descarta solo) y acción «Continuar»</td></tr>
+<tr><td>Sin temporizador</td><td>No se muestra ninguna notificación</td></tr>
+</table></div>
+
+<h2>4 · Reglas de datos vacíos</h2>
+<div class="box"><table>
+<tr><th>Situación</th><th>Mensaje</th><th>Acción</th></tr>
+<tr><td>Biblioteca sin libros</td><td>Tu próxima historia empieza aquí</td><td>Importar EPUB o PDF</td></tr>
+<tr><td>Búsqueda sin resultados</td><td>No encontramos novelas</td><td>Limpiar búsqueda y filtros</td></tr>
+<tr><td>EPUB sin índice</td><td>Este EPUB no incluye un índice navegable</td><td>Seguir leyendo</td></tr>
+<tr><td>Sin marcas</td><td>Aún no tienes marcas. Toca el marcador para guardar un párrafo</td><td>—</td></tr>
+<tr><td>Sin servidor TTS</td><td>Voz M5 no disponible. Configura el servidor de voz</td><td>Ir a Ajustes → Servidor de voz M5</td></tr>
+<tr><td>Error al abrir EPUB</td><td>No se pudo abrir la novela</td><td>Volver</td></tr>
+</table></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const P={back:'<path d="M15 18l-6-6 6-6"/>',search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',bookmark:'<path d="M6 3h12v18l-6-4-6 4z"/>',library:'<rect x="4" y="4" width="5" height="16" rx="1"/><rect x="11" y="4" width="5" height="16" rx="1"/><path d="M18 6l3 .8-3.5 13-3-.8z"/>',settings:'<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',plus:'<path d="M12 5v14M5 12h14"/>',play:'<path d="M7 4l13 8-13 8z" fill="currentColor"/>',pause:'<path d="M8 5v14M16 5v14" stroke-width="3.5"/>',prev:'<path d="M19 5v14l-10-7z" fill="currentColor"/><path d="M5.5 5v14"/>',next:'<path d="M5 5v14l10-7z" fill="currentColor"/><path d="M18.5 5v14"/>',stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',text:'<path d="M2.5 19l5-14 5 14M4.5 14h6M14.5 19l3.5-9 3.5 9M15.8 16h4.4"/>',audio:'<path d="M4 15v-3a8 8 0 0116 0v3"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/>',list:'<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>'};
+const I=(n,z=16)=>`<svg width="${z}" height="${z}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+$('icons').innerHTML=Object.keys(P).map(k=>`<span class="sw" style="width:72px;color:var(--tx)">${I(k,26)}${k}</span>`).join('');
+const TH=[['Oscuro','#14181a','#1e2427','#e0b36a','#f1efe8'],['Negro','#000000','#111214','#8fb8ff','#e6e6e6'],['Bosque','#121c16','#1b2a21','#a9d6a0','#e8f0e4'],['Violeta','#1a1626','#251f36','#c4a8ff','#efeafa'],['Océano','#0f1c28','#172a3b','#7fc8e8','#e8f1f7'],['Sepia','#f3e9d6','#eadcc2','#8a4b22','#3b2d1d'],['Claro','#fbfaf7','#f0eee8','#1f5f4a','#1d2321'],['Gris','#d9d9d6','#cbcbc7','#3b4a5c','#222222']];
+$('themes').innerHTML=TH.map(t=>`<div style="display:inline-block;margin:0 14px 10px 0;vertical-align:top"><b style="font-size:12px">${t[0]}</b><div>${t.slice(1).map(c=>`<span class="sw"><i style="background:${c}"></i>${c}</span>`).join('')}</div></div>`).join('');
+const cv=(w,h,c)=>`<div class="cv" style="width:${w}px;height:${h}px;background:${c}"></div>`;
+const G='linear-gradient(160deg,#2f6f58,#173a2d)',R='linear-gradient(160deg,#b4472f,#5d1f17)',BL='linear-gradient(160deg,#4a5d8c,#1f2a47)';
+const nav=`<div class="nav"><span style="color:#e0b36a">${I('library',13)}Biblioteca</span><span>${I('settings',13)}Ajustes</span></div>`;
+const head=(n,q='')=>`<h4>Tu biblioteca</h4><div class="mu" style="margin:3px 0 8px">${n} novelas · sin conexión</div><div class="s">${q||'Buscar novela o autor…'}</div><div class="ch"><b class="on">Todas</b><b>Leyendo</b><b>Terminadas</b></div>`;
+const ph=(body,cap,sub)=>`<div><div class="ph">${body}</div><div class="cap">${cap}<small>${sub}</small></div></div>`;
+const emp=(ic,t,p,b)=>`<div class="emp"><div class="ic">${ic}</div><h5>${t}</h5><div class="mu">${p}</div>${b?`<div class="btn">${b}</div>`:''}</div>`;
+$('lib').innerHTML=
+ ph(`<div class="pad">${head(3)}<div class="hero">${cv(54,80,G)}<div><b style="color:#e0b36a;font-size:8px">CONTINUAR LEYENDO</b><div style="font:700 11px Georgia">Sobreviviendo en una novela…</div><div class="bar"><i style="width:18%"></i></div><span class="btn">Continuar →</span></div></div><div style="display:flex;gap:8px">${cv(86,120,R)}${cv(86,120,BL)}</div></div>${nav}`,'Con datos','3 novelas, hero de continuar lectura y cuadrícula')+
+ ph(`<div class="pad">${head(0)}${emp(I('library',32),'Tu próxima historia empieza aquí','Importa un EPUB o PDF para leer a tu ritmo, incluso sin conexión.','Importar EPUB o PDF')}</div>${nav}`,'Sin datos','Biblioteca vacía')+
+ ph(`<div class="pad">${head(3,'zzz')}${emp(I('search',32),'No encontramos novelas','Prueba otro título, autor o filtro.','Limpiar búsqueda y filtros')}</div>${nav}`,'Sin resultados','Búsqueda o filtro sin coincidencias');
+const rdBase=`<div class="pad" style="font:11px/1.7 Georgia,serif;opacity:.5"><div style="text-align:center;font-weight:700;font-size:14px;margin-bottom:8px">Prólogo</div>La brisa de otoño temprano se sentía fría.<br><br>Con cada paso, las hojas dispersas crujían debajo de sus pies.</div>`;
+const tabs=a=>`<div class="tb" style="gap:6px;margin:0 0 6px;justify-content:space-around">${[['Lectura','text'],['Audio','audio'],['Índice','list'],['Marcas','bookmark']].map(([x,i])=>`<span style="display:flex;flex-direction:column;align-items:center;gap:2px;font-size:8px;color:${x===a?'#e0b36a':'#a4aeb0'};font-weight:${x===a?700:400}">${I(i,14)}${x}</span>`).join('')}</div>`;
+$('rd').innerHTML=
+ ph(`${rdBase}<div class="sh">${tabs('Audio')}<div class="grp" style="text-align:center"><b>Lectura en voz alta</b><div class="mu">M5 · Supertonic · Español</div></div><div class="tb"><b>${I('prev',16)}</b><b class="p">${I('play',20)}</b><b>${I('next',16)}</b></div><div class="grp"><div style="display:flex;justify-content:space-between"><b>VELOCIDAD</b><span style="color:#e0b36a">1.40×</span></div><div class="bar"><i style="width:60%"></i></div></div></div>`,'Audio con servidor','Controles y slider 0.5×–2×')+
+ ph(`${rdBase}<div class="sh">${tabs('Audio')}<div class="grp" style="text-align:center"><b>Voz M5 no disponible</b><div class="err" style="margin-top:4px">El servidor TTS M5 no está configurado.</div><div class="btn" style="margin-top:8px">Configurar servidor</div></div><div class="tb" style="opacity:.35"><b>${I('prev',16)}</b><b class="p">${I('play',20)}</b><b>${I('next',16)}</b></div></div>`,'Audio sin servidor','Controles deshabilitados')+
+ ph(`${rdBase}<div class="sh">${tabs('Índice')}${['Prólogo','Capítulo 1: Seol Tae-pyeong','Capítulo 2: El Palacio Cheongdo','Capítulo 3: La Princesa Azur'].map(c=>`<div class="it">${c}</div>`).join('')}</div>`,'Índice con datos','176 secciones')+
+ ph(`${rdBase}<div class="sh">${tabs('Índice')}${emp(I('list',32),'Sin índice','Este EPUB no incluye un índice navegable. Puedes seguir leyendo normalmente.','')}</div>`,'Índice sin datos','EPUB sin tabla de contenidos')+
+ ph(`${rdBase}<div class="sh">${tabs('Marcas')}${emp(I('bookmark',32),'Aún no tienes marcas','Toca el marcador para guardar un párrafo.','')}</div>`,'Marcas sin datos','Lista vacía');
+const hd=(t)=>`<div class="hd"><span class="dot"></span>NovelReader · ${t}</div>`;
+const acts=a=>`<div class="ac">${a.map(x=>`<span class="${x[1]||''}">${x[0]}</span>`).join('')}</div>`;
+const pl=(state,sub,pr,a,extra='')=>`<div><span class="pill ${extra}">${state}</span><div class="nt">${hd('ahora')}<div class="bd"><div class="t"><b>Sobreviviendo en una novela de fantasía romántica</b><div class="sm">${sub}</div></div>${cv(56,56,G).replace('class="cv"','class="lg"')}</div>${pr?`<div class="pr"><i style="width:${pr}%"></i></div>`:''}${acts(a)}</div></div>`;
+$('np').innerHTML=
+ pl('Reproduciendo','Prólogo · Voz M5 · 1.4×',18,[[I('prev',18)],[I('pause',18),'big'],[I('next',18)],[I('stop',18)]])+
+ pl('En pausa','Prólogo · En pausa · 1.4×',18,[[I('prev',18)],[I('play',18),'big'],[I('next',18)],[I('stop',18)]])+
+ pl('Preparando','Preparando audio…',0,[[I('stop',14)+'Cancelar']])+
+ `<div><span class="pill no">Sin datos · servidor no configurado</span><div class="nt">${hd('ahora')}<div class="bd"><div class="t"><b>Voz M5 no disponible</b><div class="sm">Configura el servidor de voz para escuchar</div></div></div>${acts([['Abrir ajustes']])}</div></div>`;
+const tm=(state,t,s,a,x='')=>`<div><span class="pill ${x}">${state}</span><div class="nt light">${hd('temporizador')}<div class="bd"><div class="t"><b>${t}</b><div class="sm">${s}</div></div></div>${acts(a)}</div></div>`;
+$('nt').innerHTML=
+ tm('Activo','Temporizador de lectura','El audio se detendrá en 14:32',[['+15 min'],['Cancelar']])+
+ tm('Fin de capítulo','Temporizador de lectura','Se detendrá al terminar el capítulo',[['Cancelar']])+
+ tm('Finalizado','Lectura pausada','El temporizador ha terminado',[['Continuar','big']])+
+ `<div><span class="pill no">Sin temporizador</span><div class="nt light" style="opacity:.55;text-align:center;padding:26px 14px">No se muestra ninguna notificación</div></div>`;
+</script>
+</body>
+</html>

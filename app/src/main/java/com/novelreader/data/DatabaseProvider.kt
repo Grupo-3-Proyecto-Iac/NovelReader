@@ -17,6 +17,11 @@ object DatabaseProvider {
                     db.execSQL("CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, bookId TEXT NOT NULL, locatorJson TEXT NOT NULL, label TEXT, createdAt INTEGER NOT NULL)")
                 }
             })
+            .addMigrations(object : androidx.room.migration.Migration(3, 4) {
+                override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE bookmarks ADD COLUMN kind TEXT NOT NULL DEFAULT 'READING'")
+                }
+            })
             .build().also { instance = it }
     }
 }

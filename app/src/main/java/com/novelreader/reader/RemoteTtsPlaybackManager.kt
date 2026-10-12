@@ -36,6 +36,7 @@ class RemoteTtsPlaybackManager(
         fun onSegmentStarted(segmentId: Int)
         fun onSegmentFinished(segmentId: Int)
         fun onUtteranceStarted(utteranceKey: String)
+        fun onUtteranceFinished(utteranceKey: String)
         /**
          * Se dispara cuando el audio ya recibido llega al último segmento
          * conocido. La pantalla debe pedir el siguiente párrafo aquí, mientras
@@ -290,7 +291,6 @@ class RemoteTtsPlaybackManager(
     private fun registerAudioEnd(payload: JSONObject) {
         val id = payload.optInt("segmentId", incomingSegmentId)
         audioBuffers[id]?.completed?.countDown()
-        requestNextUtteranceIfNeeded(id)
     }
 
     private fun requestNextUtteranceIfNeeded(id: Int) {
@@ -336,6 +336,10 @@ class RemoteTtsPlaybackManager(
                     segment.utteranceKey.isNotBlank() && startedUtterances.add(segment.utteranceKey)
                 }
                 if (utteranceStarted) notifyUtteranceStarted(segment.utteranceKey)
+                // Pide el párrafo siguiente cuando empieza a sonar el último
+                // segmento conocido, no cuando el servidor termina de generarlo.
+                // Así el navegador TTS no se adelanta varios párrafos al audio real.
+                requestNextUtteranceIfNeeded(segment.id)
 
                 val pcm = buffer.pcm.toByteArray()
                 var offset = 0
@@ -353,6 +357,12 @@ class RemoteTtsPlaybackManager(
                     socket?.let { ws -> socketListener?.sendMore(ws, 1) }
                 }
                 notifyFinishedSegment(segment.id)
+                val utteranceFinished = synchronized(this) {
+                    segments.getOrNull(playIndex + 1)?.utteranceKey != segment.utteranceKey
+                }
+                if (utteranceFinished && segment.utteranceKey.isNotBlank()) {
+                    notifyUtteranceFinished(segment.utteranceKey)
+                }
                 synchronized(this) { audioBuffers.remove(segment.id) }
                 playIndex++
             }
@@ -428,6 +438,7 @@ class RemoteTtsPlaybackManager(
     private fun notifyStarted(id: Int) = main.post { listener?.onSegmentStarted(id) }
     private fun notifyFinishedSegment(id: Int) = main.post { listener?.onSegmentFinished(id) }
     private fun notifyUtteranceStarted(key: String) = main.post { listener?.onUtteranceStarted(key) }
+    private fun notifyUtteranceFinished(key: String) = main.post { listener?.onUtteranceFinished(key) }
     private fun notifyFinished() = main.post { listener?.onFinished() }
     private fun notifyError(value: String) {
         Log.e("RemoteTts", value)

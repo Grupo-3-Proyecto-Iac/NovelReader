@@ -5,7 +5,6 @@ val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use(::load)
 }
-
 fun buildConfigString(name: String): String {
     return localProperties.getProperty(name, "")
         .replace("\\", "\\\\")
@@ -43,6 +42,7 @@ dependencies {
     val bom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(bom); androidTestImplementation(bom)
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.media:media:1.7.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -50,6 +50,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.compose.ui:ui"); implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.room:room-runtime:2.8.5"); implementation("androidx.room:room-ktx:2.8.5")
     kapt("androidx.room:room-compiler:2.8.5")
@@ -60,6 +61,7 @@ dependencies {
     implementation("org.readium.kotlin-toolkit:readium-navigator:3.2.0")
     implementation("org.readium.kotlin-toolkit:readium-navigator-media-tts:3.2.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // opcionalmente en el almacenamiento privado de la aplicación.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     debugImplementation("androidx.compose.ui:ui-tooling")

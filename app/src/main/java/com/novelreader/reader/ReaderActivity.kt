@@ -14,28 +14,43 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.novelreader.NovelTheme
-import com.novelreader.ReadingSettings
+import com.novelreader.ReaderSettingsPanel
 import com.novelreader.isDark
+import com.novelreader.themeSpec
 import android.graphics.Color as AndroidColor
 import android.content.pm.ActivityInfo
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
+import android.content.res.ColorStateList
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.widget.Button
+import android.widget.ImageButton
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import android.app.AlertDialog
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.view.MotionEvent
 import android.view.View
 import android.util.Log
@@ -70,18 +85,26 @@ import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.preferences.Color as ReadiumColor
 import org.readium.r2.navigator.preferences.FontFamily
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.SelectableNavigator
 import org.readium.r2.navigator.DecorableNavigator
 import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
+import org.readium.r2.navigator.input.InputListener
+import org.readium.r2.navigator.input.TapEvent
 import org.readium.navigator.media.tts.AndroidTtsNavigator
 import org.readium.navigator.media.tts.AndroidTtsNavigatorFactory
 import org.readium.navigator.media.tts.android.AndroidTtsPreferences
 import org.readium.navigator.media.tts.android.AndroidTtsEngine
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Locator
+import org.readium.r2.shared.publication.services.search.SearchService
+import org.readium.r2.shared.publication.services.search.search
 import kotlinx.coroutines.Job
 
+@OptIn(ExperimentalReadiumApi::class)
 class ReaderActivity : FragmentActivity() {
     private val sleepTimerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -106,6 +129,16 @@ class ReaderActivity : FragmentActivity() {
             }
         }
     }
+    private val audioControlReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.getStringExtra(AudioPlaybackService.EXTRA_COMMAND)) {
+                AudioPlaybackService.ACTION_PLAY_PAUSE -> toggleAudioFromNotification()
+                AudioPlaybackService.ACTION_PREVIOUS -> moveRemoteReader(-1)
+                AudioPlaybackService.ACTION_NEXT -> moveRemoteReader(1)
+                AudioPlaybackService.ACTION_STOP -> stopTts()
+            }
+        }
+    }
     private var readerChromeVisible = true
     private var currentPreferences by mutableStateOf(ReaderPreferences())
     private var progressPercent by mutableStateOf(0)
@@ -118,29 +151,40 @@ class ReaderActivity : FragmentActivity() {
     private var ttsPlaying by mutableStateOf(false)
     private var ttsStatus by mutableStateOf("Listo para leer desde la posición actual")
     private var ttsUtterance by mutableStateOf("")
-    private var ttsSpeed by mutableFloatStateOf(1f)
+    private var ttsSpeed by mutableFloatStateOf(1.4f)
     private var ttsPitch by mutableFloatStateOf(1f)
     private var ttsVoices by mutableStateOf<List<AndroidTtsEngine.Voice>>(emptyList())
     private var probeTts: TextToSpeech? = null
     private var directReaderTts: TextToSpeech? = null
     private var directTtsMode = false
-    private var directTtsSpeaking = false
+    private var directTtsSpeaking by mutableStateOf(false)
     private var directTtsLocatorKey = ""
     private var directTtsChunks: List<String> = emptyList()
     private var directTtsChunkIndex = 0
     private var remoteTtsMode by mutableStateOf(false)
-    private var remoteTtsSpeaking = false
+    private var remoteTtsSpeaking by mutableStateOf(false)
     private var remoteTtsLocatorKey = ""
+    private var remotePlayingLocatorKey = ""
     private var remoteTts: RemoteTtsPlaybackManager? = null
     private val remoteTtsLocators = mutableMapOf<String, org.readium.r2.shared.publication.Locator>()
     private val remoteTtsTexts = mutableMapOf<String, String>()
     private var playbackPositionPromptShown = false
+    private var audioParagraphSelectionMode = false
+    private var selectedAudioStartLocator: Locator? = null
+    private var selectedAudioStartPending = false
+    private var selectedAudioStartText by mutableStateOf("")
+    private var savedAudioResumeLocator: Locator? = null
+    private var remoteReconnectAttempts = 0
+    private var remoteReconnectJob: Job? = null
     private val ttsJobs = mutableListOf<Job>()
     private var ttsVisualNavigator: DecorableNavigator? = null
     private var sleepTimerMinutes by mutableIntStateOf(0)
     private var sleepTimerRemainingSeconds by mutableLongStateOf(0L)
     private var pendingSleepTimerMinutes by mutableIntStateOf(0)
+    private var audioNotificationActive = false
     private var currentBookId: String = ""
+    private var currentBookPath: String = ""
+    private var bookmarkActive = false
     private var activeNavigator: EpubNavigatorFragment? = null
     private var activePublication: Publication? = null
     private val preferenceWrites = kotlinx.coroutines.channels.Channel<ReaderPreferences>(kotlinx.coroutines.channels.Channel.CONFLATED)
@@ -160,6 +204,12 @@ class ReaderActivity : FragmentActivity() {
             },
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        ContextCompat.registerReceiver(
+            this,
+            audioControlReceiver,
+            IntentFilter(AudioPlaybackService.ACTION_COMMAND),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         lifecycleScope.launch {
             val store = PreferencesStore(this@ReaderActivity)
             for (value in preferenceWrites) store.save(value)
@@ -173,10 +223,15 @@ class ReaderActivity : FragmentActivity() {
         val path = intent.getStringExtra(EXTRA_BOOK_PATH) ?: run { finish(); return }
         val bookId = intent.getStringExtra(EXTRA_BOOK_ID) ?: run { finish(); return }
         currentBookId = bookId
+        currentBookPath = path
         lifecycleScope.launch {
             try {
                 val db = DatabaseProvider.get(this@ReaderActivity)
                 val initialLocator = db.readingDao().progress(bookId)?.locatorJson?.let(LocatorStorage::decode)
+                savedAudioResumeLocator = db.readingDao()
+                    .findBookmarkByKind(bookId, Bookmark.KIND_AUTO_AUDIO)
+                    ?.locatorJson
+                    ?.let(LocatorStorage::decode)
                 val readerPreferences = PreferencesStore(this@ReaderActivity).preferences.first()
                 currentPreferences = readerPreferences
                 ttsSpeed = readerPreferences.ttsSpeed
@@ -186,8 +241,11 @@ class ReaderActivity : FragmentActivity() {
                 ReadiumPublicationRepository(this@ReaderActivity).open(File(path)).onSuccess { publication ->
                 activePublication = publication
                 findViewById<TextView>(R.id.reader_title).text = publication.metadata.title ?: "NovelReader"
-                findViewById<Button>(R.id.reader_back).setOnClickListener { finish() }
+                findViewById<ImageButton>(R.id.reader_back).setOnClickListener { finish() }
                 lateinit var readerNavigator: EpubNavigatorFragment
+                 findViewById<ImageButton>(R.id.reader_search).setOnClickListener {
+                     showReaderSearchDialog(publication, readerNavigator)
+                 }
                 findViewById<Button>(R.id.reader_settings).setOnClickListener {
                     showReaderSettings(
                         publication = publication,
@@ -195,9 +253,6 @@ class ReaderActivity : FragmentActivity() {
                         openContents = { showTableOfContents(publication, publication.tableOfContents, readerNavigator) },
                         openBookmarks = { showBookmarksDialog(readerNavigator) }
                     )
-                }
-                findViewById<Button>(R.id.reader_audio).setOnClickListener {
-                    showSystemAudioControls(publication, readerNavigator)
                 }
                 findViewById<Button>(R.id.reader_bookmarks).setOnClickListener {
                     lifecycleScope.launch {
@@ -234,8 +289,16 @@ class ReaderActivity : FragmentActivity() {
                 readerNavigator = navigator
                 activeNavigator = navigator
                 applyReaderPreferences(navigator, readerPreferences)
+                installAudioParagraphTapSelector(navigator)
+                findViewById<ImageButton>(R.id.reader_audio).setOnClickListener {
+                    lifecycleScope.launch {
+                        if (getOrCreateTts(publication, navigator) != null) {
+                            toggleAudioFromNotification()
+                        }
+                    }
+                }
                 (navigator as? OverflowableNavigator)?.addInputListener(DirectionalNavigationAdapter(navigator, animatedTransition = true))
-                findViewById<Button>(R.id.bookmark_button).setOnClickListener {
+                findViewById<ImageButton>(R.id.bookmark_button).setOnClickListener {
                     addCurrentBookmark(navigator)
                 }
                 findViewById<Button>(R.id.toc_button).setOnClickListener {
@@ -244,12 +307,17 @@ class ReaderActivity : FragmentActivity() {
                 lifecycleScope.launch {
                     repeatOnLifecycle(Lifecycle.State.STARTED) {
                         navigator.currentLocator.collect { locator ->
-                            db.readingDao().saveProgress(ReadingProgress(bookId, LocatorStorage.encode(locator), locator.locations.totalProgression))
+                            val locatorJson = LocatorStorage.encode(locator)
+                            db.readingDao().saveProgress(ReadingProgress(bookId, locatorJson, locator.locations.totalProgression))
+                            val isMarked = db.readingDao().findBookmark(bookId, locatorJson, Bookmark.KIND_READING) != null
+                            bookmarkActive = isMarked
+                            updateBookmarkIcon(isMarked)
                             val percent = ((locator.locations.totalProgression ?: 0.0) * 100).toInt().coerceIn(0, 100)
                             progressPercent = percent
                             findViewById<android.widget.ProgressBar>(R.id.reader_progress).progress = percent
                             findViewById<TextView>(R.id.reader_progress_label).text = "$percent%"
-                            findViewById<TextView>(R.id.reader_status).text = "Progreso guardado"
+                            findViewById<TextView>(R.id.reader_status).text = "Voz M5 · %.2f×".format(ttsSpeed)
+                            updateReaderScrollIndicator(locator.locations.progression ?: locator.locations.totalProgression ?: 0.0)
                         }
                     }
                 }
@@ -277,15 +345,16 @@ class ReaderActivity : FragmentActivity() {
                 val readingHeight = (readingBottom - readingTop).coerceAtLeast(1)
                 val inReadingArea = event.y > readingTop && event.y < readingBottom
                 // Zona deliberadamente pequeña: solo el rectángulo central (44% x 44%).
-                val centerLeft = root.width * 0.30f
-                val centerRight = root.width * 0.70f
-                val centerTop = readingTop + readingHeight * 0.34f
-                val centerBottom = readingTop + readingHeight * 0.66f
+                val centerSize = root.width * 0.56f
+                val centerLeft = (root.width - centerSize) / 2f
+                val centerRight = centerLeft + centerSize
+                val centerTop = readingTop + (readingHeight - centerSize) / 2f
+                val centerBottom = centerTop + centerSize
                 val inCenter = event.x in centerLeft..centerRight && event.y in centerTop..centerBottom
-                val shouldOpenFromCenter = activeSheet == null && inReadingArea && inCenter
+                val shouldOpenFromCenter = activeSheet == null && !audioParagraphSelectionMode && inReadingArea && inCenter
                 val isLongPress = event.eventTime - event.downTime >= android.view.ViewConfiguration.getLongPressTimeout()
                 val audioIsActive = directTtsSpeaking || ttsPlaying
-                if (moved < android.view.ViewConfiguration.get(this).scaledTouchSlop && isLongPress && inReadingArea && activeSheet == null && !audioIsActive) {
+                if (moved < android.view.ViewConfiguration.get(this).scaledTouchSlop && isLongPress && inReadingArea && activeSheet == null && !audioIsActive && !audioParagraphSelectionMode) {
                     val navigator = activeNavigator
                     super.dispatchTouchEvent(event)
                     lifecycleScope.launch {
@@ -318,42 +387,253 @@ class ReaderActivity : FragmentActivity() {
         return super.dispatchTouchEvent(event)
     }
 
+    private fun installAudioParagraphTapSelector(navigator: EpubNavigatorFragment) {
+        navigator.addInputListener(object : InputListener {
+            override fun onTap(event: TapEvent): Boolean {
+                if (!audioParagraphSelectionMode) return false
+                lifecycleScope.launch {
+                    selectAudioParagraphAt(navigator, event.point.x, event.point.y)
+                }
+                return true
+            }
+        })
+    }
+
+    private suspend fun selectAudioParagraphAt(
+        navigator: EpubNavigatorFragment,
+        x: Float,
+        y: Float
+    ) {
+        val script = """
+            (() => {
+              let node = document.elementFromPoint(${x}, ${y});
+              if (!node) return false;
+              const selector = 'p, li, blockquote, h1, h2, h3, h4, h5, h6, td, figcaption';
+              node = node.closest(selector) || node;
+              if (!node.textContent || !node.textContent.trim()) return false;
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              const selection = window.getSelection();
+              selection.removeAllRanges();
+              selection.addRange(range);
+              return true;
+            })();
+        """.trimIndent()
+        navigator.evaluateJavascript(script)
+        delay(40L)
+        val locator = runCatching { navigator.currentSelection()?.locator }.getOrNull()
+        navigator.clearSelection()
+        if (locator == null) {
+            Toast.makeText(this, "No se pudo identificar ese párrafo. Toca sobre el texto.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        selectAudioStartParagraph(locator)
+    }
+
+    private fun updateReaderScrollIndicator(progression: Double) {
+        val track = findViewById<View>(R.id.reader_scroll_indicator)
+        val thumb = findViewById<View>(R.id.reader_scroll_thumb)
+        track.post {
+            val travel = (track.height - thumb.height).coerceAtLeast(0)
+            thumb.translationY = (travel * progression.coerceIn(0.0, 1.0)).toFloat()
+            track.animate().cancel()
+            track.visibility = View.VISIBLE
+            track.alpha = 1f
+            track.removeCallbacks(hideScrollIndicator)
+            track.postDelayed(hideScrollIndicator, 1100L)
+        }
+    }
+
+    private val hideScrollIndicator = Runnable {
+        findViewById<View>(R.id.reader_scroll_indicator)
+            ?.animate()
+            ?.alpha(0f)
+            ?.setDuration(250L)
+            ?.withEndAction {
+                findViewById<View>(R.id.reader_scroll_indicator)?.visibility = View.INVISIBLE
+            }
+            ?.start()
+    }
+
     private fun addCurrentBookmark(navigator: EpubNavigatorFragment? = activeNavigator) {
         val target = navigator ?: return
         val locator = target.currentLocator.value
+        val locatorJson = LocatorStorage.encode(locator)
         val label = ttsUtterance.takeIf { it.isNotBlank() }?.let { utterance ->
             "Párrafo · ${utterance.replace(Regex("\\s+"), " ").trim().take(72)}"
         } ?: "Párrafo · $progressPercent% leído"
+        lifecycleScope.launch {
+            val dao = DatabaseProvider.get(this@ReaderActivity).readingDao()
+            val existing = dao.findBookmark(currentBookId, locatorJson, Bookmark.KIND_READING)
+            if (existing != null) {
+                dao.deleteBookmark(existing.id)
+                bookmarkActive = false
+                updateBookmarkIcon(false)
+                Toast.makeText(this@ReaderActivity, "Marca quitada", Toast.LENGTH_SHORT).show()
+            } else {
+                dao.addBookmark(
+                    Bookmark(
+                        bookId = currentBookId,
+                        locatorJson = locatorJson,
+                        label = label,
+                        kind = Bookmark.KIND_READING
+                    )
+                )
+                bookmarkActive = true
+                updateBookmarkIcon(true)
+                Toast.makeText(this@ReaderActivity, "Párrafo marcado", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun addAudioBookmark() {
+        val locator = ttsNavigator?.location?.value?.utteranceLocator ?: activeNavigator?.currentLocator?.value ?: return
+        val label = ttsUtterance.takeIf { it.isNotBlank() }?.let { utterance ->
+            "Audio · ${utterance.replace(Regex("\\s+"), " ").trim().take(72)}"
+        } ?: "Audio · $progressPercent% leído"
         lifecycleScope.launch {
             DatabaseProvider.get(this@ReaderActivity).readingDao().addBookmark(
                 Bookmark(
                     bookId = currentBookId,
                     locatorJson = LocatorStorage.encode(locator),
-                    label = label
+                    label = label,
+                    kind = Bookmark.KIND_AUDIO
                 )
             )
-            Toast.makeText(this@ReaderActivity, "Párrafo marcado", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@ReaderActivity, "Posición de audio guardada", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun showBookmarksDialog(navigator: EpubNavigatorFragment) {
+        if (activeSheet != null || sheetTransitionPending) return
+        val publication = activePublication ?: return
         lifecycleScope.launch {
             val bookmarks = DatabaseProvider.get(this@ReaderActivity).readingDao().bookmarks(currentBookId).first()
-            val labels = if (bookmarks.isEmpty()) {
-                arrayOf("Aún no hay marcadores")
-            } else {
-                bookmarks.mapIndexed { index, bookmark ->
-                    bookmark.label?.ifBlank {
-                        "Marcador ${index + 1} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(bookmark.createdAt))}"
-                    } ?: "Marcador ${index + 1}"
-                }.toTypedArray()
+            activeSheetHeightFraction = .72f
+            activeSheetDraggable = true
+            val dialog = BottomSheetDialog(this@ReaderActivity, com.google.android.material.R.style.Theme_MaterialComponents_DayNight_BottomSheetDialog)
+            activeSheet = dialog
+            val compose = ComposeView(this@ReaderActivity).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                setContent {
+                    NovelTheme(currentPreferences) {
+                        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
+                            Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+                                Text("━", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp))
+                                ReaderSheetTabs(
+                                    selected = 3,
+                                    openSettings = {
+                                        pendingSheetAction = {
+                                            showReaderSettings(
+                                                publication,
+                                                navigator,
+                                                openContents = { showTableOfContents(publication, publication.tableOfContents, navigator) },
+                                                openBookmarks = { showBookmarksDialog(navigator) }
+                                            )
+                                        }
+                                        dialog.dismiss()
+                                    },
+                                    openAudio = {
+                                        pendingSheetAction = { showSystemAudioControls(publication, navigator) }
+                                        dialog.dismiss()
+                                    },
+                                    openContents = {
+                                        pendingSheetAction = { showTableOfContents(publication, publication.tableOfContents, navigator) }
+                                        dialog.dismiss()
+                                    },
+                                    openBookmarks = {}
+                                )
+                                HorizontalDivider()
+                                if (bookmarks.isEmpty()) {
+                                    Column(
+                                        Modifier.fillMaxSize().padding(28.dp),
+                                        verticalArrangement = Arrangement.Center,
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Outlined.BookmarkBorder, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+                                        Spacer(Modifier.height(12.dp))
+                                        Text("Aún no tienes marcas", style = MaterialTheme.typography.titleMedium)
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            "Toca el marcador para guardar un párrafo.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                } else {
+                                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+                                        items(bookmarks) { bookmark ->
+                                            val type = when (bookmark.kind) {
+                                                Bookmark.KIND_AUTO_AUDIO -> "Autoguardado de audio"
+                                                Bookmark.KIND_AUDIO -> "Audio"
+                                                else -> "Lectura"
+                                            }
+                                            val label = bookmark.label?.ifBlank { type } ?: type
+                                            Row(
+                                                Modifier.fillMaxWidth().clickable {
+                                                    LocatorStorage.decode(bookmark.locatorJson)?.let { locator ->
+                                                        lifecycleScope.launch { navigator.go(locator) }
+                                                    }
+                                                    dialog.dismiss()
+                                                    setReaderChromeVisible(false)
+                                                }.padding(horizontal = 20.dp, vertical = 14.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(if (bookmark.kind == Bookmark.KIND_AUDIO || bookmark.kind == Bookmark.KIND_AUTO_AUDIO) "▶" else "♦", color = MaterialTheme.colorScheme.primary)
+                                                Spacer(Modifier.width(14.dp))
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(label, maxLines = 2)
+                                                    Text(type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                            HorizontalDivider(Modifier.padding(start = 54.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            dialog.setContentView(compose)
+            dialog.setOnShowListener { resizeSheet() }
+            dialog.setOnDismissListener { finishSheet(dialog) }
+            dialog.show()
+            dialog.window?.setDimAmount(0f)
+        }
+    }
+
+    private fun showAudioBookmarksDialog(navigator: AndroidTtsNavigator, publication: Publication) {
+        lifecycleScope.launch {
+            val bookmarks = DatabaseProvider.get(this@ReaderActivity).readingDao().bookmarks(currentBookId).first()
+                .filter { it.kind == Bookmark.KIND_AUDIO || it.kind == Bookmark.KIND_AUTO_AUDIO }
+            if (bookmarks.isEmpty()) {
+                Toast.makeText(this@ReaderActivity, "Aún no hay posiciones de audio guardadas", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val labels = bookmarks.mapIndexed { index, bookmark ->
+                bookmark.label?.ifBlank { "Audio ${index + 1}" } ?: "Audio ${index + 1}"
+            }.toTypedArray()
             AlertDialog.Builder(this@ReaderActivity)
-                .setTitle("Marcadores")
+                .setTitle("Iniciar audio desde")
                 .setItems(labels) { _, index ->
                     bookmarks.getOrNull(index)?.let { bookmark ->
                         LocatorStorage.decode(bookmark.locatorJson)?.let { locator ->
-                            lifecycleScope.launch { navigator.go(locator) }
+                            lifecycleScope.launch {
+                                playbackPositionPromptShown = true
+                                beginAudioNotification()
+                                if (remoteTtsMode) {
+                                    startRemoteReaderTtsFromLocator(navigator, locator)
+                                } else if (directTtsMode) {
+                                    navigator.go(locator)
+                                    startDirectReaderTts(navigator)
+                                } else {
+                                    navigator.go(locator)
+                                    navigator.submitPreferences(ttsPreferences())
+                                    navigator.play()
+                                }
+                                startSleepTimer(sleepTimerMinutes)
+                            }
                         }
                     }
                 }
@@ -361,6 +641,149 @@ class ReaderActivity : FragmentActivity() {
                 .show()
         }
     }
+
+    private fun showReaderSearchDialog(publication: Publication, navigator: EpubNavigatorFragment) {
+        val theme = currentPreferences.themeSpec()
+        val backgroundColor = AndroidColor.parseColor(theme.surface)
+        val textColor = AndroidColor.parseColor(theme.text)
+        val accentColor = AndroidColor.parseColor(theme.accent)
+        val input = EditText(this).apply {
+            hint = "Buscar una palabra o frase"
+            setSingleLine(true)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setTextColor(textColor)
+            setHintTextColor(textColor.withAlpha(150))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(backgroundColor)
+                setStroke(dp(1), accentColor.withAlpha(120))
+            }
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+            setBackgroundColor(backgroundColor)
+            addView(input, LinearLayout.LayoutParams(-1, dp(52)))
+        }
+        val dialog = AlertDialog.Builder(this, readerDialogTheme())
+            .setTitle("Buscar en la novela")
+            .setView(container)
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Buscar", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val query = input.text.toString().trim()
+                if (query.isBlank()) {
+                    input.error = "Escribe algo para buscar"
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                searchPublication(publication, navigator, query)
+            }
+        }
+        dialog.show()
+        styleReaderDialog(dialog)
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+                true
+            } else false
+        }
+    }
+
+    private fun searchPublication(publication: Publication, navigator: EpubNavigatorFragment, query: String) {
+        lifecycleScope.launch {
+            val iterator = runCatching {
+                publication.search(
+                    query,
+                    SearchService.Options(caseSensitive = false, diacriticSensitive = false, wholeWord = false)
+                )
+            }.getOrNull()
+            if (iterator == null) {
+                Toast.makeText(this@ReaderActivity, "Este EPUB no permite búsquedas", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val results = mutableListOf<Locator>()
+            var failureMessage: String? = null
+            try {
+                while (results.size < 100) {
+                    val page = iterator.next()
+                    val collection = page.getOrNull()
+                    if (collection == null) {
+                        failureMessage = page.failureOrNull()?.toString()
+                        break
+                    }
+                    results += collection.locators
+                }
+            } finally {
+                iterator.close()
+            }
+            if (failureMessage != null && results.isEmpty()) {
+                Toast.makeText(this@ReaderActivity, "No se pudo buscar en este EPUB", Toast.LENGTH_LONG).show()
+            } else {
+                showSearchResultsDialog(navigator, query, results)
+            }
+        }
+    }
+
+    private fun showSearchResultsDialog(navigator: EpubNavigatorFragment, query: String, results: List<Locator>) {
+        if (results.isEmpty()) {
+            Toast.makeText(this, "No se encontraron coincidencias para «$query»", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = results.mapIndexed { index, locator ->
+            val context = listOfNotNull(locator.text.before, locator.text.highlight, locator.text.after)
+                .joinToString(" ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .take(180)
+            "${index + 1}. ${locator.title?.takeIf { it.isNotBlank() } ?: "Resultado"}\n$context"
+        }.toTypedArray()
+        val dialog = AlertDialog.Builder(this, readerDialogTheme())
+            .setTitle("Resultados: $query")
+            .setItems(labels) { _, index ->
+                results.getOrNull(index)?.let { locator ->
+                    lifecycleScope.launch {
+                        navigator.go(locator)
+                        setReaderChromeVisible(false)
+                    }
+                }
+            }
+            .setPositiveButton("Cerrar", null)
+            .create()
+        dialog.setOnShowListener { styleReaderDialog(dialog) }
+        dialog.show()
+    }
+
+    private fun readerDialogTheme(): Int = if (currentPreferences.isDark()) {
+        android.R.style.Theme_Material_Dialog_Alert
+    } else {
+        android.R.style.Theme_Material_Light_Dialog_Alert
+    }
+
+    private fun styleReaderDialog(dialog: AlertDialog) {
+        val theme = currentPreferences.themeSpec()
+        val surface = AndroidColor.parseColor(theme.surface)
+        val text = AndroidColor.parseColor(theme.text)
+        val accent = AndroidColor.parseColor(theme.accent)
+        dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
+            cornerRadius = dp(22).toFloat()
+            setColor(surface)
+            setStroke(dp(1), text.withAlpha(35))
+        })
+        dialog.findViewById<TextView>(android.R.id.title)?.setTextColor(text)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(accent)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(text.withAlpha(200))
+        dialog.listView?.setBackgroundColor(surface)
+    }
+
+    private fun Int.withAlpha(alpha: Int): Int = AndroidColor.argb(
+        alpha.coerceIn(0, 255), AndroidColor.red(this), AndroidColor.green(this), AndroidColor.blue(this)
+    )
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
     private fun saveCurrentProgress() {
         val navigator = activeNavigator ?: return
@@ -372,8 +795,41 @@ class ReaderActivity : FragmentActivity() {
         }
     }
 
+    private fun saveAudioProgress(locator: Locator, spokenText: String? = null) {
+        if (currentBookId.isBlank()) return
+        val audioLocator = spokenText?.takeIf { it.isNotBlank() }?.let { text ->
+            locator.copy(text = locator.text.copy(highlight = text))
+        } ?: locator
+        val locatorJson = LocatorStorage.encode(audioLocator)
+        savedAudioResumeLocator = audioLocator
+        val progression = audioLocator.locations.totalProgression
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val dao = DatabaseProvider.get(this@ReaderActivity).readingDao()
+            dao.saveProgress(ReadingProgress(currentBookId, locatorJson, progression))
+            val savedAt = System.currentTimeMillis()
+            val autoBookmark = dao.findBookmarkByKind(currentBookId, Bookmark.KIND_AUTO_AUDIO)
+            if (autoBookmark == null) {
+                dao.addBookmark(
+                    Bookmark(
+                        bookId = currentBookId,
+                        locatorJson = locatorJson,
+                        label = "Autoguardado",
+                        kind = Bookmark.KIND_AUTO_AUDIO,
+                        createdAt = savedAt
+                    )
+                )
+            } else {
+                dao.updateBookmark(
+                    autoBookmark.copy(locatorJson = locatorJson, label = "Autoguardado", createdAt = savedAt)
+                )
+            }
+        }
+    }
+
     override fun onPause() {
-        saveCurrentProgress()
+        remoteTtsLocators[remotePlayingLocatorKey]?.let { locator ->
+            saveAudioProgress(locator, remoteTtsTexts[remotePlayingLocatorKey])
+        } ?: saveCurrentProgress()
         super.onPause()
     }
 
@@ -388,10 +844,9 @@ class ReaderActivity : FragmentActivity() {
     }
 
     private fun setReaderChromeVisible(visible: Boolean) {
-        readerChromeVisible = true
-        findViewById<View>(R.id.reader_top_bar)?.visibility = View.VISIBLE
-        // Los controles del lector viven únicamente en el modal; no mostramos una barra fija inferior.
-        findViewById<View>(R.id.reader_bottom_panel)?.visibility = View.GONE
+        readerChromeVisible = visible
+        findViewById<View>(R.id.reader_top_bar)?.visibility = if (visible) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.reader_bottom_panel)?.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     private fun finishSheet(dismissed: BottomSheetDialog) {
@@ -428,32 +883,81 @@ class ReaderActivity : FragmentActivity() {
         }
         findViewById<View>(R.id.reader_root).setBackgroundColor(backgroundColor)
         findViewById<View>(R.id.reader_top_bar).background = ColorDrawable(backgroundColor)
-        findViewById<View>(R.id.reader_bottom_panel).background = ColorDrawable(backgroundColor)
-        listOf(R.id.reader_back, R.id.toc_button, R.id.bookmark_button, R.id.reader_settings, R.id.reader_audio, R.id.reader_bookmarks)
+        val theme = currentPreferences.themeSpec()
+        val surfaceColor = runCatching { AndroidColor.parseColor(theme.surface) }.getOrDefault(backgroundColor)
+        val accentColor = runCatching { AndroidColor.parseColor(theme.accent) }.getOrDefault(AndroidColor.rgb(224, 179, 106))
+        val translucentSurface = (surfaceColor and 0x00FFFFFF) or (0xD9 shl 24)
+        findViewById<View>(R.id.reader_bottom_panel).background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 41f * resources.displayMetrics.density
+            setColor(translucentSurface)
+            setStroke((1f * resources.displayMetrics.density).roundToInt(), (textColor and 0x00FFFFFF) or (0x24 shl 24))
+        }
+        listOf(R.id.toc_button, R.id.reader_bookmarks)
             .forEach { findViewById<Button>(it).setTextColor(textColor) }
+        findViewById<Button>(R.id.reader_settings).apply {
+            setTextColor(textColor)
+            backgroundTintList = null
+            this.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor((textColor and 0x00FFFFFF) or (0x18 shl 24))
+            }
+        }
+        findViewById<android.widget.ProgressBar>(R.id.reader_progress).apply {
+            progressTintList = ColorStateList.valueOf(accentColor)
+            progressBackgroundTintList = ColorStateList.valueOf((textColor and 0x00FFFFFF) or (0x24 shl 24))
+        }
+        updateMiniPlayerButton()
+        findViewById<ImageButton>(R.id.reader_back).setColorFilter(textColor)
+        findViewById<ImageButton>(R.id.reader_search).setColorFilter(textColor)
+        updateBookmarkIcon(bookmarkActive)
         findViewById<TextView>(R.id.reader_title).setTextColor(textColor)
         findViewById<TextView>(R.id.reader_progress_label).setTextColor(textColor)
         findViewById<TextView>(R.id.reader_status).setTextColor(textColor)
     }
 
+    private fun updateBookmarkIcon(active: Boolean) {
+        val theme = currentPreferences.themeSpec()
+        val color = runCatching {
+            AndroidColor.parseColor(if (active) theme.accent else theme.text)
+        }.getOrDefault(if (active) AndroidColor.rgb(224, 179, 106) else AndroidColor.WHITE)
+        findViewById<ImageButton>(R.id.bookmark_button).apply {
+            setImageResource(if (active) R.drawable.ic_bookmark_filled else R.drawable.ic_bookmark_outline)
+            setColorFilter(color)
+            background = null
+        }
+    }
+
+    private fun updateMiniPlayerButton() {
+        val playing = remoteTtsSpeaking || directTtsSpeaking || ttsPlaying
+        val theme = currentPreferences.themeSpec()
+        val accent = runCatching { AndroidColor.parseColor(theme.accent) }.getOrDefault(AndroidColor.rgb(224, 179, 106))
+        val iconColor = runCatching { AndroidColor.parseColor(theme.background) }.getOrDefault(AndroidColor.rgb(36, 26, 8))
+        findViewById<ImageButton>(R.id.reader_audio).apply {
+            setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+            setColorFilter(iconColor)
+            contentDescription = if (playing) "Pausar lectura" else "Reproducir lectura"
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(accent)
+            }
+        }
+    }
+
     private fun epubPreferences(value: ReaderPreferences) = EpubPreferences(
         fontFamily = when (value.fontFamily) {
-            "Serif" -> FontFamily.SERIF
-            "Monospace" -> FontFamily.MONOSPACE
-            "Cursiva" -> FontFamily.CURSIVE
-            "Decorativa" -> FontFamily.FANTASY
-            "Accessible" -> FontFamily.ACCESSIBLE_DFA
-            "Duospace" -> FontFamily.IA_WRITER_DUOSPACE
-            "OpenDyslexic" -> FontFamily.OPEN_DYSLEXIC
-            else -> FontFamily.SANS_SERIF
+            "Sans" -> FontFamily.SANS_SERIF
+            "Mono" -> FontFamily.MONOSPACE
+            else -> FontFamily.SERIF
         },
         // Readium 3.2 recibe un multiplicador: 1.0 = 100 %, 0.75 = 75 %.
         // Internamente lo convierte a WebView textZoom multiplicándolo por 100.
-        fontSize = value.fontScale.coerceIn(.75f, 1.25f).toDouble(),
+        fontSize = value.fontScale.coerceIn(13f / 16f, 28f / 16f).toDouble(),
         textColor = ReadiumColor(runCatching { AndroidColor.parseColor(value.textColor) }.getOrDefault(AndroidColor.WHITE)),
         backgroundColor = ReadiumColor(runCatching { AndroidColor.parseColor(value.backgroundColor) }.getOrDefault(AndroidColor.DKGRAY)),
-        lineHeight = value.lineSpacing.toDouble(),
-        paragraphSpacing = value.paragraphSpacing.toDouble(),
+        lineHeight = value.lineSpacing.coerceIn(1.3f, 2.3f).toDouble(),
+        paragraphSpacing = value.paragraphSpacing.coerceIn(0f, 2.5f).toDouble(),
+        textAlign = if (value.justifiedText) TextAlign.JUSTIFY else TextAlign.LEFT,
         scroll = value.verticalReading,
         publisherStyles = false
     )
@@ -474,18 +978,19 @@ class ReaderActivity : FragmentActivity() {
         openBookmarks: () -> Unit
     ) {
         val actions = listOf(
-            "Aa  Ajustes" to openSettings,
-            "▶  Audio" to openAudio,
-            "☰  Índice" to openContents,
-            "◆  Marcas" to openBookmarks
+            Triple(Icons.Outlined.TextFields, "Lectura", openSettings),
+            Triple(Icons.Outlined.Headphones, "Audio", openAudio),
+            Triple(Icons.Outlined.List, "Índice", openContents),
+            Triple(Icons.Outlined.BookmarkBorder, "Marcas", openBookmarks)
         )
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceAround
         ) {
-            actions.forEachIndexed { index, (label, action) ->
-                TextButton(onClick = action, shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)) {
+            actions.forEachIndexed { index, (icon, label, action) ->
+                TextButton(onClick = action, modifier = Modifier.weight(1f), shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = if (index == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(label, fontSize = 11.sp, fontWeight = if (index == selected) FontWeight.Bold else FontWeight.Normal)
                         Spacer(Modifier.height(3.dp))
                         Box(Modifier.width(34.dp).height(3.dp).background(if (index == selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
@@ -512,15 +1017,9 @@ class ReaderActivity : FragmentActivity() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 NovelTheme(currentPreferences) {
-                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
                         Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                             Text("━", Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally).padding(top = 4.dp))
-                            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Tu lectura", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                                TextButton(onClick = { dialog.dismiss() }) { Text("Listo") }
-                            }
-                            Text("Lectura · $progressPercent%  ·  Posición guardada", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            LinearProgressIndicator(progress = { progressPercent / 100f }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.secondary)
                             ReaderSheetTabs(
                                 selected = 0,
                                 openSettings = {},
@@ -537,8 +1036,7 @@ class ReaderActivity : FragmentActivity() {
                                     dialog.dismiss()
                                 }
                             )
-                            HorizontalDivider()
-                            ReadingSettings(currentPreferences, { value ->
+                            ReaderSettingsPanel(currentPreferences, { value ->
                                 val previous = currentPreferences
                                 currentPreferences = value
                                 applyReaderPreferences(navigator, value)
@@ -547,7 +1045,7 @@ class ReaderActivity : FragmentActivity() {
                                 if (previous.devicePortrait != value.devicePortrait) {
                                     requestedOrientation = if (value.devicePortrait) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                                 }
-                            }, modifier = Modifier.weight(1f), compact = true)
+                            }, openContents, openBookmarks, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -593,23 +1091,9 @@ class ReaderActivity : FragmentActivity() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 NovelTheme(currentPreferences) {
-                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
                         Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                             Text("━", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp))
-                            Row(
-                                Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Índice", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        if (entries.isEmpty()) "Sin capítulos disponibles" else "${entries.size} secciones",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                TextButton(onClick = { dialog.dismiss() }) { Text("Cerrar") }
-                            }
                             ReaderSheetTabs(
                                 selected = 2,
                                 openSettings = {
@@ -647,6 +1131,10 @@ class ReaderActivity : FragmentActivity() {
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Spacer(Modifier.height(18.dp))
+                                    Button(onClick = { dialog.dismiss(); setReaderChromeVisible(false) }) {
+                                        Text("Seguir leyendo")
+                                    }
                                 }
                             } else {
                                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -688,21 +1176,9 @@ class ReaderActivity : FragmentActivity() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 NovelTheme(currentPreferences) {
-                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)) {
                         Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                             Text("━", Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp))
-                            Row(
-                                Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Lectura en voz alta", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                                    Text(ttsStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                TextButton(onClick = { dialog.dismiss() }) { Text("Ocultar") }
-                            }
-                            Text("Lectura · $progressPercent%", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            LinearProgressIndicator(progress = { progressPercent / 100f }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.secondary)
                             ReaderSheetTabs(
                                 selected = 1,
                                 openSettings = {
@@ -763,16 +1239,35 @@ class ReaderActivity : FragmentActivity() {
                                                  style = MaterialTheme.typography.bodySmall,
                                                  color = MaterialTheme.colorScheme.error
                                              )
+                                             Button(
+                                                 onClick = {
+                                                     pendingSheetAction = {
+                                                         showReaderSettings(
+                                                             publication,
+                                                             visualNavigator,
+                                                             openContents = { showTableOfContents(publication, publication.tableOfContents, visualNavigator) },
+                                                             openBookmarks = { showBookmarksDialog(visualNavigator) }
+                                                         )
+                                                     }
+                                                     dialog.dismiss()
+                                                 },
+                                                 modifier = Modifier.fillMaxWidth()
+                                             ) { Text("Configurar servidor") }
                                          }
                                     }
                                 }
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
+                                val audioIsPlaying = if (remoteTtsMode) remoteTtsSpeaking else if (directTtsMode) directTtsSpeaking else ttsPlaying
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FilledTonalIconButton(
                                         onClick = { moveRemoteReader(-1) },
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) { Text("Anterior", maxLines = 1, softWrap = false, fontSize = 12.sp) }
-                                    Button(
+                                        enabled = remoteTtsMode,
+                                        modifier = Modifier.size(58.dp)
+                                    ) { Icon(Icons.Filled.SkipPrevious, "Párrafo anterior", Modifier.size(28.dp)) }
+                                    FilledIconButton(
                                         onClick = {
                                             lifecycleScope.launch {
                                                 val tts = getOrCreateTts(publication, visualNavigator)
@@ -806,44 +1301,69 @@ class ReaderActivity : FragmentActivity() {
                                                 }
                                             }
                                         },
-                                        modifier = Modifier.weight(1.35f).heightIn(min = 48.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) { Text(if (if (remoteTtsMode) remoteTtsSpeaking else if (directTtsMode) directTtsSpeaking else ttsPlaying) "Pausar" else "Reproducir", maxLines = 1, softWrap = false, fontSize = 12.sp) }
-                                    OutlinedButton(
+                                        enabled = remoteTtsMode,
+                                        modifier = Modifier.size(80.dp),
+                                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                                    ) { Icon(if (audioIsPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (audioIsPlaying) "Pausar" else "Reproducir", Modifier.size(38.dp)) }
+                                    FilledTonalIconButton(
                                         onClick = { moveRemoteReader(1) },
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) { Text("Siguiente", maxLines = 1, softWrap = false, fontSize = 12.sp) }
+                                        enabled = remoteTtsMode,
+                                        modifier = Modifier.size(58.dp)
+                                    ) { Icon(Icons.Filled.SkipNext, "Párrafo siguiente", Modifier.size(28.dp)) }
                                 }
-                                Text("Velocidad · ${formatTtsValue(ttsSpeed)}×", style = MaterialTheme.typography.titleSmall)
-                                Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf(.75f, 1f, 1.25f, 1.4f, 1.5f, 2f).forEach { value ->
-                                        FilterChip(
-                                            selected = kotlin.math.abs(ttsSpeed - value) < .01f,
-                                            onClick = {
-                                                ttsSpeed = value
-                                                currentPreferences = currentPreferences.copy(ttsSpeed = value)
-                                                preferenceWrites.trySend(currentPreferences)
-                                                applyTtsPreferences()
-                                                 if (remoteTtsMode && remoteTtsSpeaking) {
-                                                     restartRemoteReaderTts()
-                                                 }
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("Inicio de la lectura", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            if (selectedAudioStartText.isBlank()) {
+                                                "Si no eliges uno, la lectura comenzará desde la posición actual."
+                                            } else {
+                                                "Párrafo elegido: «${selectedAudioStartText.take(120)}${if (selectedAudioStartText.length > 120) "…" else ""}»"
                                             },
-                                            label = { Text("${formatTtsValue(value)}×", maxLines = 1, softWrap = false, fontSize = 12.sp) },
-                                            modifier = Modifier.height(36.dp)
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                        Button(
+                                            onClick = {
+                                                pauseAudioForParagraphSelection()
+                                                audioParagraphSelectionMode = true
+                                                pendingSheetAction = {
+                                                    Toast.makeText(
+                                                        this@ReaderActivity,
+                                                        "Toca el párrafo desde el que quieres comenzar",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                                dialog.dismiss()
+                                            },
+                                            enabled = remoteTtsMode,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) { Text("Elegir párrafo inicial") }
                                     }
                                 }
-                                Text("Tono · ${formatTtsValue(ttsPitch)}", style = MaterialTheme.typography.titleSmall)
+                                Text("Velocidad · ${formatTtsValue(ttsSpeed)}×", style = MaterialTheme.typography.titleSmall)
                                 Slider(
-                                    value = ttsPitch,
-                                    onValueChange = {
-                                        ttsPitch = it
-                                        currentPreferences = currentPreferences.copy(ttsPitch = it)
+                                    value = ttsSpeed.coerceIn(.5f, 2f),
+                                    onValueChange = { value ->
+                                        val stepped = (value * 20f).roundToInt() / 20f
+                                        ttsSpeed = stepped
+                                        currentPreferences = currentPreferences.copy(ttsSpeed = stepped)
                                         preferenceWrites.trySend(currentPreferences)
                                         applyTtsPreferences()
                                     },
-                                    valueRange = .7f..1.3f
+                                    onValueChangeFinished = {
+                                        if (remoteTtsMode && remoteTtsSpeaking) restartRemoteReaderTts()
+                                    },
+                                    valueRange = .5f..2f,
+                                    steps = 29,
+                                    enabled = remoteTtsMode
                                 )
                                 Text(
                                     if (sleepTimerRemainingSeconds > 0L) "Temporizador · ${formatRemainingTime(sleepTimerRemainingSeconds)} restantes"
@@ -857,14 +1377,29 @@ class ReaderActivity : FragmentActivity() {
                                             selected = sleepTimerMinutes == minutes,
                                             onClick = {
                                                 sleepTimerMinutes = minutes
-                                                if (ttsPlaying) startSleepTimer(minutes) else if (minutes == 0) stopSleepTimer()
+                                                // La elección del temporizador es una acción
+                                                // independiente del estado transitorio de Readium.
+                                                // Con M5, ttsPlaying puede ser false durante la
+                                                // precarga aunque el audio continúe reproduciéndose.
+                                                if (minutes == 0) stopSleepTimer()
+                                                else startSleepTimer(minutes)
                                             },
                                             label = { Text(if (minutes == 0) "Sin límite" else "$minutes min", maxLines = 1, softWrap = false, fontSize = 12.sp) },
                                             modifier = Modifier.height(36.dp)
                                         )
                                     }
                                 }
-                                Button(
+                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                     OutlinedButton(
+                                         onClick = { ttsNavigator?.let { showAudioBookmarksDialog(it, publication) } },
+                                         modifier = Modifier.weight(1f).heightIn(min = 46.dp)
+                                     ) { Text("Elegir marcador", maxLines = 1, softWrap = false, fontSize = 12.sp) }
+                                     OutlinedButton(
+                                         onClick = { addAudioBookmark() },
+                                         modifier = Modifier.weight(1f).heightIn(min = 46.dp)
+                                     ) { Text("Guardar posición", maxLines = 1, softWrap = false, fontSize = 12.sp) }
+                                 }
+                                 Button(
                                     onClick = { stopTts() },
                                     modifier = Modifier.fillMaxWidth().height(48.dp)
                                 ) { Text("Detener lectura") }
@@ -1059,25 +1594,99 @@ class ReaderActivity : FragmentActivity() {
         val visualNavigator = activeNavigator ?: return
         Toast.makeText(this, "Iniciando audio desde ese párrafo", Toast.LENGTH_SHORT).show()
         val navigator = getOrCreateTts(publication, visualNavigator) ?: return
-        navigator.go(locator)
         playbackPositionPromptShown = true
+        playAudioFromLocator(navigator, locator)
+        showSystemAudioControls(publication, visualNavigator)
+    }
+
+    private fun pauseAudioForParagraphSelection() {
+        when {
+            remoteTtsSpeaking -> pauseRemoteReaderTts()
+            directTtsSpeaking -> pauseDirectReaderTts()
+            ttsPlaying -> ttsNavigator?.pause()
+        }
+        stopSleepTimer()
+    }
+
+    private suspend fun selectAudioStartParagraph(locator: Locator) {
+        audioParagraphSelectionMode = false
+        val publication = activePublication ?: return
+        val visualNavigator = activeNavigator ?: return
+        val navigator = getOrCreateTts(publication, visualNavigator) ?: return
+        val paragraphLocator = resolveTtsParagraphLocator(navigator, locator)
+        val paragraphText = paragraphLocator.text.highlight
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            .orEmpty()
+
+        selectedAudioStartLocator = paragraphLocator
+        selectedAudioStartPending = true
+        selectedAudioStartText = paragraphText
+        (visualNavigator as? DecorableNavigator)?.applyDecorations(
+            listOf(
+                Decoration(
+                    "audio-start",
+                    paragraphLocator,
+                    Decoration.Style.Highlight(AndroidColor.argb(90, 232, 184, 94))
+                )
+            ),
+            group = "audio-start"
+        )
+        Toast.makeText(this, "Párrafo inicial seleccionado. Pulsa reproducir.", Toast.LENGTH_LONG).show()
+        showSystemAudioControls(publication, visualNavigator)
+    }
+
+    private suspend fun resolveTtsParagraphLocator(
+        navigator: AndroidTtsNavigator,
+        target: Locator
+    ): Locator {
+        navigator.pause()
+        navigator.go(target)
+        val selectedText = target.text.highlight
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            .orEmpty()
+
+        repeat(30) {
+            delay(50L)
+            val location = navigator.location.value
+            val sameResource = location.utteranceLocator.href.toString() == target.href.toString()
+            val utterance = location.utterance.replace(Regex("\\s+"), " ").trim()
+            val containsSelection = selectedText.isBlank() || utterance.contains(selectedText, ignoreCase = true)
+            if (sameResource && utterance.isNotBlank() && containsSelection) {
+                return location.utteranceLocator.copy(
+                    text = location.utteranceLocator.text.copy(highlight = utterance)
+                )
+            }
+        }
+        return target
+    }
+
+    private suspend fun playAudioFromLocator(navigator: AndroidTtsNavigator, locator: Locator) {
+        beginAudioNotification()
         if (remoteTtsMode) {
-            startRemoteReaderTts(navigator)
+            startRemoteReaderTtsFromLocator(navigator, locator)
         } else if (directTtsMode) {
+            navigator.go(locator)
             startDirectReaderTts(navigator)
         } else {
+            navigator.go(locator)
             navigator.submitPreferences(ttsPreferences())
             navigator.play()
         }
         startSleepTimer(sleepTimerMinutes)
         ttsStatus = "Leyendo desde el párrafo seleccionado"
-        showSystemAudioControls(publication, visualNavigator)
     }
 
     private fun requestPlaybackStart(navigator: AndroidTtsNavigator, publication: Publication) {
         fun startFromCurrentPosition() {
             if (remoteTtsMode) {
-                startRemoteReaderTts(navigator)
+                val resume = savedAudioResumeLocator
+                if (resume != null && !resume.text.highlight.isNullOrBlank()) {
+                    lifecycleScope.launch { startRemoteReaderTtsFromLocator(navigator, resume) }
+                } else {
+                    startRemoteReaderTts(navigator)
+                }
             } else if (directTtsMode) {
                 startDirectReaderTts(navigator)
             } else {
@@ -1085,6 +1694,16 @@ class ReaderActivity : FragmentActivity() {
                 navigator.play()
             }
             startSleepTimer(sleepTimerMinutes)
+        }
+
+        val selectedStart = selectedAudioStartLocator
+        if (selectedAudioStartPending && selectedStart != null) {
+            selectedAudioStartPending = false
+            playbackPositionPromptShown = true
+            lifecycleScope.launch {
+                playAudioFromLocator(navigator, selectedStart)
+            }
+            return
         }
 
         if (playbackPositionPromptShown || progressPercent <= 0) {
@@ -1101,6 +1720,9 @@ class ReaderActivity : FragmentActivity() {
                     publication.locatorFromLink(firstLink)?.let { locator -> navigator.go(locator) }
                 }
                 startFromCurrentPosition()
+            }
+            .setNeutralButton("Marcadores") { _, _ ->
+                showAudioBookmarksDialog(navigator, publication)
             }
             .setPositiveButton("Punto guardado") { _, _ ->
                 startFromCurrentPosition()
@@ -1119,6 +1741,117 @@ class ReaderActivity : FragmentActivity() {
         startRemoteReaderUtterance(current.utterance, key)
     }
 
+    /**
+     * TtsNavigator.go(locator) moves its iterator asynchronously but does not
+     * immediately publish the new utterance. Read the saved sentence itself
+     * first so a stale page-level utterance cannot be spoken instead.
+     */
+    private suspend fun startRemoteReaderTtsFromLocator(
+        navigator: AndroidTtsNavigator,
+        target: org.readium.r2.shared.publication.Locator
+    ) {
+        remoteTtsSpeaking = false
+        remoteTtsLocatorKey = ""
+        remotePlayingLocatorKey = ""
+        remoteTts?.stop()
+        navigator.go(target)
+
+        val targetText = target.text.highlight?.trim()?.replace(Regex("\\s+"), " ")
+        val textToRead = targetText?.takeIf { it.isNotBlank() }
+        if (textToRead == null) {
+            ttsStatus = "Este marcador no contiene el texto del párrafo. Reproduce el audio una vez para actualizar el autoguardado."
+            Toast.makeText(this, ttsStatus, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // The TTS navigator's go(locator) is asynchronous and may keep exposing
+        // its previous page-level utterance. Start the saved sentence directly;
+        // the navigator has already been asked to seek so it can continue with
+        // the following utterance after this one finishes.
+        activeNavigator?.go(target, animated = false)
+        val key = target.toString()
+        remoteTtsLocators[key] = target
+        remoteTtsTexts[key] = textToRead
+        savedAudioResumeLocator = target.copy(text = target.text.copy(highlight = textToRead))
+        remoteTtsSpeaking = true
+        ttsPlaying = true
+        startRemoteReaderUtterance(textToRead, key)
+    }
+
+    private fun toggleAudioFromNotification() {
+        val navigator = ttsNavigator ?: return
+        when {
+            remoteTtsMode -> {
+                if (remoteTtsSpeaking) {
+                    pauseRemoteReaderTts()
+                    stopSleepTimer()
+                } else {
+                    beginAudioNotification()
+                    remoteTtsSpeaking = true
+                    ttsPlaying = true
+                    val resume = savedAudioResumeLocator
+                    if (resume != null && !resume.text.highlight.isNullOrBlank()) {
+                        lifecycleScope.launch { startRemoteReaderTtsFromLocator(navigator, resume) }
+                    } else {
+                        startRemoteReaderTts(navigator)
+                    }
+                    startSleepTimer(sleepTimerMinutes)
+                }
+            }
+            directTtsMode -> {
+                if (directTtsSpeaking) {
+                    pauseDirectReaderTts()
+                    stopSleepTimer()
+                } else {
+                    beginAudioNotification()
+                    startDirectReaderTts(navigator)
+                    startSleepTimer(sleepTimerMinutes)
+                }
+            }
+            else -> {
+                beginAudioNotification()
+                navigator.submitPreferences(ttsPreferences())
+                if (ttsPlaying) navigator.pause() else navigator.play()
+                updateAudioNotification()
+            }
+        }
+    }
+
+    private fun beginAudioNotification() {
+        audioNotificationActive = true
+        updateAudioNotification()
+    }
+
+    private fun updateAudioNotification() {
+        updateMiniPlayerButton()
+        if (!audioNotificationActive) return
+        val title = activePublication?.metadata?.title?.takeIf { it.isNotBlank() } ?: "NovelReader"
+        val playing = remoteTtsSpeaking || directTtsSpeaking || ttsPlaying
+        val chapter = ttsNavigator?.location?.value?.utteranceLocator?.title
+            ?: activeNavigator?.currentLocator?.value?.title
+            ?: "Posición $progressPercent%"
+        val coverPath = File(currentBookPath).parentFile
+            ?.listFiles()
+            ?.firstOrNull { it.isFile && it.nameWithoutExtension.equals("cover", ignoreCase = true) }
+            ?.absolutePath
+        AudioPlaybackService.update(
+            context = this,
+            title = title,
+            text = "$chapter · Voz M5 · ${formatTtsValue(ttsSpeed)}×",
+            playing = playing,
+            progress = progressPercent,
+            bookId = currentBookId,
+            bookPath = currentBookPath,
+            coverPath = coverPath
+        )
+    }
+
+    private fun endAudioNotification() {
+        audioNotificationActive = false
+        updateMiniPlayerButton()
+        AudioPlaybackService.stop(this)
+    }
+
     private fun restartRemoteReaderTts() {
         if (!remoteTtsMode || !remoteTtsSpeaking) return
         val navigator = ttsNavigator ?: return
@@ -1126,12 +1859,18 @@ class ReaderActivity : FragmentActivity() {
         remoteTtsLocatorKey = ""
         remoteTtsSpeaking = true
         ttsPlaying = true
-        startRemoteReaderTts(navigator)
+        val resume = savedAudioResumeLocator
+        if (resume != null && !resume.text.highlight.isNullOrBlank()) {
+            lifecycleScope.launch { startRemoteReaderTtsFromLocator(navigator, resume) }
+        } else {
+            startRemoteReaderTts(navigator)
+        }
     }
 
     private fun startRemoteReaderUtterance(text: String, locatorKey: String) {
         if (!remoteTtsMode || text.isBlank() || locatorKey == remoteTtsLocatorKey) return
         val manager = remoteTts ?: return
+        beginAudioNotification()
         remoteTtsLocatorKey = locatorKey
         remoteTtsSpeaking = true
         ttsPlaying = true
@@ -1150,6 +1889,7 @@ class ReaderActivity : FragmentActivity() {
                 override fun onStatus(status: String) {
                     ttsStatus = status
                     ttsPlaying = status != "En pausa" && status != "Detenido"
+                    updateAudioNotification()
                 }
 
                 override fun onSegmentStarted(segmentId: Int) = Unit
@@ -1158,7 +1898,10 @@ class ReaderActivity : FragmentActivity() {
 
                 override fun onUtteranceStarted(utteranceKey: String) {
                     val locator = remoteTtsLocators[utteranceKey] ?: return
+                    remotePlayingLocatorKey = utteranceKey
+                    remoteReconnectAttempts = 0
                     ttsUtterance = remoteTtsTexts[utteranceKey].orEmpty()
+                    saveAudioProgress(locator, remoteTtsTexts[utteranceKey])
                     val navigator = activeNavigator ?: return
                     navigator.go(locator, animated = false)
                     lifecycleScope.launch {
@@ -1167,6 +1910,11 @@ class ReaderActivity : FragmentActivity() {
                             group = "tts"
                         )
                     }
+                }
+
+                override fun onUtteranceFinished(utteranceKey: String) {
+                    val locator = remoteTtsLocators[utteranceKey] ?: return
+                    saveAudioProgress(locator, remoteTtsTexts[utteranceKey])
                 }
 
                 override fun onNeedsNextUtterance() {
@@ -1184,28 +1932,57 @@ class ReaderActivity : FragmentActivity() {
                     remoteTtsSpeaking = false
                     ttsPlaying = false
                     remoteTtsLocatorKey = ""
+                    remotePlayingLocatorKey = ""
                     remoteTtsLocators.clear()
                     remoteTtsTexts.clear()
                     ttsStatus = "Lectura terminada"
+                    endAudioNotification()
                 }
 
                 override fun onError(message: String) {
+                    val resumeKey = remotePlayingLocatorKey
+                    val resume = remoteTtsLocators[resumeKey] ?: savedAudioResumeLocator
+                    if (resume != null) saveAudioProgress(resume, remoteTtsTexts[resumeKey])
                     remoteTtsSpeaking = false
                     ttsPlaying = false
                     ttsStatus = message
-                    Toast.makeText(this@ReaderActivity, message, Toast.LENGTH_LONG).show()
+                    updateAudioNotification()
+                    scheduleRemoteReconnect(resume, message)
                 }
             }
         )
     }
 
     private fun pauseRemoteReaderTts() {
-        saveCurrentProgress()
+        remoteTtsLocators[remotePlayingLocatorKey]?.let { locator ->
+            saveAudioProgress(locator, remoteTtsTexts[remotePlayingLocatorKey])
+        } ?: savedAudioResumeLocator?.let(::saveAudioProgress) ?: saveCurrentProgress()
+        remoteReconnectJob?.cancel()
         remoteTtsSpeaking = false
         remoteTtsLocatorKey = ""
         remoteTts?.pause()
         ttsPlaying = false
         ttsStatus = "En pausa"
+        updateAudioNotification()
+    }
+
+    private fun scheduleRemoteReconnect(locator: Locator?, reason: String) {
+        remoteReconnectJob?.cancel()
+        if (locator == null || locator.text.highlight.isNullOrBlank() || remoteReconnectAttempts >= 3) {
+            ttsStatus = "$reason. Pulsa reproducir para reanudar."
+            Toast.makeText(this, ttsStatus, Toast.LENGTH_LONG).show()
+            return
+        }
+        remoteReconnectAttempts += 1
+        val attempt = remoteReconnectAttempts
+        ttsStatus = "Conexión interrumpida. Reintentando ($attempt/3)…"
+        updateAudioNotification()
+        remoteReconnectJob = lifecycleScope.launch {
+            delay(1500L * attempt)
+            val navigator = ttsNavigator ?: return@launch
+            beginAudioNotification()
+            startRemoteReaderTtsFromLocator(navigator, locator)
+        }
     }
 
     private fun moveRemoteReader(direction: Int) {
@@ -1226,6 +2003,7 @@ class ReaderActivity : FragmentActivity() {
     }
 
     private fun startDirectReaderTts(navigator: AndroidTtsNavigator) {
+        beginAudioNotification()
         directTtsSpeaking = true
         ttsPlaying = true
         ttsStatus = "Preparando voz..."
@@ -1256,6 +2034,7 @@ class ReaderActivity : FragmentActivity() {
                     runOnUiThread {
                         ttsPlaying = true
                         ttsStatus = "Leyendo"
+                        updateAudioNotification()
                     }
                 }
 
@@ -1279,6 +2058,7 @@ class ReaderActivity : FragmentActivity() {
                         directTtsSpeaking = false
                         ttsPlaying = false
                         ttsStatus = "HayaiTTS no pudo reproducir este fragmento"
+                        endAudioNotification()
                     }
                 }
             })
@@ -1446,6 +2226,7 @@ class ReaderActivity : FragmentActivity() {
 
     private fun stopTts(stopNeural: Boolean = true) {
         saveCurrentProgress()
+        endAudioNotification()
         if (stopNeural) stopSleepTimer()
         ttsJobs.forEach { it.cancel() }
         ttsJobs.clear()
@@ -1454,6 +2235,9 @@ class ReaderActivity : FragmentActivity() {
         remoteTtsSpeaking = false
         remoteTtsMode = false
         remoteTtsLocatorKey = ""
+        remotePlayingLocatorKey = ""
+        remoteReconnectJob?.cancel()
+        remoteReconnectJob = null
         remoteTtsLocators.clear()
         remoteTtsTexts.clear()
         ttsNavigator?.close()
@@ -1476,6 +2260,7 @@ class ReaderActivity : FragmentActivity() {
         ttsPlaying = false
         ttsUtterance = ""
         ttsStatus = "Lectura detenida"
+        updateMiniPlayerButton()
     }
 
     private fun openTtsSettings() {
@@ -1495,6 +2280,7 @@ class ReaderActivity : FragmentActivity() {
         // apagar la pantalla o al cambiar temporalmente de aplicación.
         stopTts(stopNeural = false)
         runCatching { unregisterReceiver(sleepTimerReceiver) }
+        runCatching { unregisterReceiver(audioControlReceiver) }
         super.onDestroy()
     }
 

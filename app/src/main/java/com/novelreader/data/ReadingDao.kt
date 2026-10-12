@@ -3,6 +3,7 @@ package com.novelreader.data
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
+import androidx.room.Update
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
@@ -16,6 +17,12 @@ interface ReadingDao {
     fun bookmarks(bookId: String): Flow<List<Bookmark>>
     @Insert
     suspend fun addBookmark(bookmark: Bookmark)
+    @Update
+    suspend fun updateBookmark(bookmark: Bookmark)
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId AND kind = :kind LIMIT 1")
+    suspend fun findBookmarkByKind(bookId: String, kind: String): Bookmark?
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId AND locatorJson = :locatorJson AND kind = :kind LIMIT 1")
+    suspend fun findBookmark(bookId: String, locatorJson: String, kind: String): Bookmark?
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun deleteBookmark(id: Long)
 }

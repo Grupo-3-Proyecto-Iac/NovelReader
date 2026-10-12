@@ -19,27 +19,30 @@ class PreferencesStore(private val context: Context) {
     private val vertical = booleanPreferencesKey("vertical_reading")
     private val lineSpacing = floatPreferencesKey("line_spacing")
     private val paragraphSpacing = floatPreferencesKey("paragraph_spacing")
+    private val justifiedText = booleanPreferencesKey("justified_text")
     private val portrait = booleanPreferencesKey("device_portrait")
     private val ttsSpeed = floatPreferencesKey("tts_speed")
     private val ttsPitch = floatPreferencesKey("tts_pitch")
     private val ttsVoiceId = stringPreferencesKey("tts_voice_id")
     private val remoteTtsUrl = stringPreferencesKey("remote_tts_url")
     val preferences = context.readerDataStore.data.map { p -> ReaderPreferences(
-        fontFamily = p[font] ?: "Sans Serif", fontScale = (p[scale] ?: 1f).coerceIn(.75f,1.25f),
-        textColor = p[text] ?: "#FF252B27", backgroundColor = p[background] ?: "#FFF5F3EC",
+        fontFamily = p[font] ?: "Times New Roman", fontScale = (p[scale] ?: (18f / 16f)).coerceIn(13f / 16f,28f / 16f),
+        textColor = p[text] ?: "#FFF1EFE8", backgroundColor = p[background] ?: "#FF14181A",
         verticalReading = p[vertical] ?: true,
-        lineSpacing = p[lineSpacing] ?: 1.2f,
-        paragraphSpacing = p[paragraphSpacing] ?: 1f,
+        lineSpacing = (p[lineSpacing] ?: 1.75f).coerceIn(1.3f, 2.3f),
+        paragraphSpacing = (p[paragraphSpacing] ?: 1.1f).coerceIn(0f, 2.5f),
+        justifiedText = p[justifiedText] ?: false,
         devicePortrait = p[portrait] ?: true,
-        ttsSpeed = (p[ttsSpeed] ?: 1f).coerceIn(.5f, 2f),
+        ttsSpeed = (p[ttsSpeed] ?: 1.4f).coerceIn(.5f, 2f),
         ttsPitch = (p[ttsPitch] ?: 1f).coerceIn(.5f, 2f),
         ttsVoiceId = p[ttsVoiceId] ?: "",
         remoteTtsUrl = p[remoteTtsUrl] ?: BuildConfig.REMOTE_TTS_URL
     ) }
     suspend fun save(value: ReaderPreferences) { context.readerDataStore.edit { p ->
-        p[font] = value.fontFamily; p[scale] = value.fontScale.coerceIn(.75f,1.25f); p[text] = value.textColor
+        p[font] = value.fontFamily; p[scale] = value.fontScale.coerceIn(13f/16f,28f/16f); p[text] = value.textColor
         p[background] = value.backgroundColor; p[vertical] = value.verticalReading
-        p[lineSpacing] = value.lineSpacing; p[paragraphSpacing] = value.paragraphSpacing; p[portrait] = value.devicePortrait
+        p[lineSpacing] = value.lineSpacing.coerceIn(1.3f,2.3f); p[paragraphSpacing] = value.paragraphSpacing.coerceIn(0f,2.5f)
+        p[justifiedText] = value.justifiedText; p[portrait] = value.devicePortrait
         p[ttsSpeed] = value.ttsSpeed.coerceIn(.5f, 2f); p[ttsPitch] = value.ttsPitch.coerceIn(.5f, 2f)
         p[ttsVoiceId] = value.ttsVoiceId
         p[remoteTtsUrl] = value.remoteTtsUrl.trim()

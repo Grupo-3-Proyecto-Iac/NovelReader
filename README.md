@@ -189,6 +189,7 @@ de server/.env cuando se usa Docker:
 | SUPERTONIC_MODEL | supertonic-3 | Selecciona el modelo Supertonic cargado. | Cambiarlo puede modificar compatibilidad, memoria y calidad. |
 | SUPERTONIC_VOICE | M5 | Voz predeterminada si el cliente no envía otra. | En esta aplicación se usa M5 deliberadamente. |
 | SUPERTONIC_STEPS | 8 | Número de pasos de inferencia por segmento. | Más pasos suelen dar mayor estabilidad/calidad, pero tardan más y consumen más CPU. |
+| TTS_TAIL_SILENCE_MS | 180 | Margen PCM al final de cada segmento. | Evita cortar la última sílaba a velocidades altas; valores excesivos agregan pausas. |
 | MAX_TTS_CONCURRENCY | 1 | Número máximo de segmentos procesados al mismo tiempo. | Subirlo puede aumentar el rendimiento total, pero eleva mucho la carga y la memoria. |
 | MAX_PENDING_SEGMENTS | 3 | Cantidad máxima de solicitudes esperando en la cola de una conexión. | Una cola mayor permite más precarga; una menor limita memoria y evita acumular audio inútil. |
 | OMP_NUM_THREADS | 4 | Hilos de OpenMP usados por operaciones numéricas. | Afecta la carga de CPU y la velocidad. |
@@ -384,6 +385,10 @@ No subas al repositorio:
 
 Para un servidor accesible desde Internet, usa HTTPS/WSS, configura un token
 de autenticación y no expongas directamente un puerto sin protección.
+
+## Versión web (solo EPUB)
+
+El proyecto incluye una versión web local en [`web/`](web/), independiente de la app Android. Solo acepta archivos `.epub`; la biblioteca y el progreso se guardan en el navegador. Incluye instrucciones de inicio en [`web/README.md`](web/README.md).
 
 ## Estado de publicación
 

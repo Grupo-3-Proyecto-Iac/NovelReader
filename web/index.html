@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#14181a">
+  <title>NovelReader · Web</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <button class="brand" data-action="home" aria-label="Biblioteca">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4.5h6.5c1.3 0 2.3 1 2.3 2.3v13c0-1.3-1-2.3-2.3-2.3H4zM20 4.5h-5.2v15.3c0-1.3 1-2.3 2.3-2.3H20z"/><path d="M7 8h3M7 11h3M16 8h1.5M16 11h1.5"/></svg></span><span>NovelReader</span>
+      </button>
+      <div class="topbar-actions">
+        <button class="theme-toggle" data-action="cycle-theme" aria-label="Cambiar tema"><span aria-hidden="true">☀</span> Claro</button>
+        <button class="icon-button mobile-menu" data-action="menu" aria-label="Abrir navegación">☰</button>
+      </div>
+    </header>
+
+    <aside class="sidebar" aria-label="Navegación principal">
+      <button class="nav-link active" data-action="home"><span aria-hidden="true">▤</span> Biblioteca</button>
+      <button class="nav-link" data-action="settings"><span aria-hidden="true">⚙</span> Ajustes</button>
+      <div class="sidebar-note">Tus libros se guardan solo en este navegador.</div>
+    </aside>
+
+    <main id="main" class="main-content" tabindex="-1"></main>
+    <nav class="mobile-nav" aria-label="Navegación inferior">
+      <button class="active" data-action="home"><span aria-hidden="true">▤</span>Biblioteca</button>
+      <button data-action="settings"><span aria-hidden="true">⚙</span>Ajustes</button>
+    </nav>
+    <input id="epub-file" type="file" accept=".epub,application/epub+zip" hidden>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+</body>
+</html>

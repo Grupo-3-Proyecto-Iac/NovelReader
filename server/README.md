@@ -11,6 +11,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:SUPERTONIC_STEPS = "8"
+$env:TTS_TAIL_SILENCE_MS = "180"
 uvicorn app:app --host 0.0.0.0 --port 8765
 ```
 
@@ -45,7 +46,9 @@ Después envía solicitudes:
 {"type":"tts_request","sessionId":"book-1-ch-1","segmentId":"001-002-003","text":"Texto en español.","voice":"M5","speed":1.0}
 ```
 
-El servidor responde con `audio_start`, varios mensajes binarios PCM16 little-endian y `audio_end`. También acepta `cancel` y `cancel_segment`. La cola está limitada para ejercer backpressure y evitar que el teléfono o el VPS acumulen audio indefinidamente.
+El servidor responde con `audio_start`, varios mensajes binarios PCM16 little-endian y `audio_end`. También acepta `cancel` y `cancel_segment`. La cola está limitada y, cuando se llena, el socket espera espacio sin descartar segmentos.
+
+`TTS_TAIL_SILENCE_MS` controla el pequeño margen de silencio agregado al final de cada segmento. El valor recomendado es `180`; evita recortar la última sílaba a velocidades altas sin crear pausas largas.
 
 ## Métricas
 
